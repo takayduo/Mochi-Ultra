@@ -1432,7 +1432,7 @@ function updateSection(): HTMLElement {
   const statusText = h("div", {
     class: "hint",
     style: "font-size:12px;color:var(--dim);line-height:1.5;",
-    text: "Mochi connects directly to your GitHub repository (takayduo/Mochi-Eye) to check for updates and bug fixes.",
+    text: "Mochi connects directly to your GitHub repository (takayduo/Mochi-Ultra) to check for updates and bug fixes.",
   });
 
   // Card displayed when an update is available

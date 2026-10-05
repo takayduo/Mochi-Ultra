@@ -5,7 +5,7 @@ const path = require("path");
 const { execSync, spawn } = require("child_process");
 
 const REPO_OWNER = "takayduo";
-const REPO_NAME = "Mochi-Eye";
+const REPO_NAME = "Mochi-Ultra";
 const GITHUB_API_URL = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/commits/main`;
 const GITHUB_ZIP_URL = `https://github.com/${REPO_OWNER}/${REPO_NAME}/archive/refs/heads/main.zip`;
 
