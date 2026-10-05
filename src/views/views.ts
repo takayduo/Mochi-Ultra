@@ -15,6 +15,7 @@ import { buildSchedule } from "./schedule";
 import { buildCoupleChat } from "./coupleChat";
 import { buildRemoteControl } from "./remoteControl";
 import { Bridge } from "../core/bridge";
+import { VoiceManager } from "../core/voice";
 
 export interface ViewActions {
   setView(v: IslandViewName): void;
@@ -116,6 +117,23 @@ export function buildHeader(actions: ViewActions): ViewHost {
   const tabSched = h("button", { class: "tab", title: "Schedule", onclick: () => go("schedule") }, svg(ICONS.calendar, 13));
   const tabDrop = h("button", { class: "tab", title: "Drop", onclick: () => go("upload") }, svg(ICONS.plus, 13));
 
+  const interruptBtn = h(
+    "button",
+    {
+      title: "Interrupt Mochi (Stop Speaking)",
+      style: "display:none;background:rgba(239,68,68,0.2);color:#ef4444;border-radius:12px;padding:3px 7px;font-size:11px;font-weight:600;align-items:center;gap:4px;cursor:pointer;border:1px solid rgba(239,68,68,0.4);",
+      onclick: () => {
+        actions.blip();
+        VoiceManager.stopSpeech();
+        State.stateOverride = null;
+        State.triggerEmote("surprised");
+        State.notify();
+      },
+    },
+    svg(ICONS.xmark, 11),
+    h("span", { text: "Stop" })
+  );
+
   const micBtn = h("button", { title: "Voice Control (Mic)", onclick: () => actions.toggleMic() }, svg(ICONS.mic, 14));
   const gearBtn = h("button", { title: "Settings", onclick: () => go("settings") }, svg(ICONS.gear, 14));
   const soundBtn = h("button", { title: "Mute", onclick: () => actions.toggleSound() }, svg(ICONS.speakerOn, 14));
@@ -129,7 +147,7 @@ export function buildHeader(actions: ViewActions): ViewHost {
     "div",
     { id: "header" },
     h("div", { class: "tabs" }, tabHome, tabChat, tabCouple, tabRemote, tabSched, tabDrop),
-    h("div", { class: "header-actions" }, micBtn, gearBtn, soundBtn),
+    h("div", { class: "header-actions" }, interruptBtn, micBtn, gearBtn, soundBtn),
   );
 
   return {
@@ -172,6 +190,10 @@ export function buildHeader(actions: ViewActions): ViewHost {
       const micOn = State.settings.micEnabled ?? true;
       micBtn.classList.toggle("on", micOn);
       micBtn.append(svg(micOn ? ICONS.mic : ICONS.micOff, 14));
+
+      const isSpeaking = VoiceManager.isSpeaking() || VoiceManager.isBusy() || State.stateOverride === "finished" || State.stateOverride === "thinking";
+      interruptBtn.style.display = isSpeaking ? "inline-flex" : "none";
+
       el.style.opacity = v === "confused" ? "0" : "1";
     },
   };

@@ -939,6 +939,10 @@ class JarvisLive:
         self._play_cursor = 0.0     # next batch starts a fresh timeline
         if self._turn_done_event:
             self._turn_done_event.clear()
+        try:
+            self.ui.set_state("LISTENING")
+        except Exception:
+            pass
         self.ui.write_log("SYS: Interrupted — listening...")
 
     def speak(self, text: str):
@@ -1733,16 +1737,102 @@ class JarvisLive:
             stream.stop()
             stream.close()
 
-    # ── Morning briefing ────────────────────────────────────────────────────────
+    # ── Startup Briefing (Partner Messages & Tasks) ──────────────────────────
+
+    def _fetch_partner_updates_sync(self) -> dict:
+        """
+        Reads local CoucouCreator settings, chat history, and schedule to check
+        for new messages and pending tasks from partner.
+        """
+        appdata = os.environ.get("APPDATA", "")
+        candidates = [
+            Path(appdata) / "mochi-ultra" / "CoucouCreator",
+            Path(appdata) / "CoucouCreator",
+            Path(appdata) / "Mochi-Ultra" / "CoucouCreator",
+        ]
+        data_dir = None
+        for c in candidates:
+            if c.exists():
+                data_dir = c
+                break
+        if not data_dir:
+            data_dir = candidates[0]
+
+        settings_file = data_dir / "settings.json"
+        chat_file = data_dir / "chat_history.json"
+        schedule_file = data_dir / "schedule.json"
+
+        user_name = "User"
+        partner_name = "Her"
+        user_role = "me"
+        partner_role = "her"
+
+        if settings_file.exists():
+            try:
+                with open(settings_file, "r", encoding="utf-8") as f:
+                    s = json.load(f)
+                    user_name = s.get("userName") or "User"
+                    partner_name = s.get("partnerName") or "Her"
+                    user_role = s.get("userRole") or "me"
+                    partner_role = "her" if user_role == "me" else "me"
+            except Exception:
+                pass
+
+        new_messages = []
+        if chat_file.exists():
+            try:
+                with open(chat_file, "r", encoding="utf-8") as f:
+                    msgs = json.load(f)
+                    if isinstance(msgs, list):
+                        for m in msgs:
+                            sender = str(m.get("sender", "")).strip().lower()
+                            sender_role = str(m.get("senderRole", "")).strip().lower()
+                            is_from_partner = (
+                                sender_role == partner_role.lower()
+                                or sender == partner_name.lower()
+                                or (sender != user_name.lower() and sender != user_role.lower())
+                            )
+                            if is_from_partner and not m.get("read", False):
+                                new_messages.append(m)
+            except Exception:
+                pass
+
+        pending_tasks = []
+        if schedule_file.exists():
+            try:
+                with open(schedule_file, "r", encoding="utf-8") as f:
+                    tasks = json.load(f)
+                    if isinstance(tasks, list):
+                        for t in tasks:
+                            if not t.get("completed", False):
+                                assigned_by = str(t.get("assignedBy", "")).strip().lower()
+                                assignee = str(t.get("assignee", "")).strip().lower()
+                                is_from_partner = (
+                                    assigned_by == partner_role.lower()
+                                    or assigned_by == partner_name.lower()
+                                    or assignee == user_role.lower()
+                                    or assignee == user_name.lower()
+                                    or assignee in ("both", "all")
+                                )
+                                if is_from_partner:
+                                    pending_tasks.append(t)
+            except Exception:
+                pass
+
+        return {
+            "userName": user_name,
+            "partnerName": partner_name,
+            "newMessages": new_messages,
+            "pendingTasks": pending_tasks,
+        }
 
     async def _send_startup_briefing(self) -> None:
         """
-        Two-phase briefing optimized for speed:
-          Phase 1 — instant greeting (no tools) → speech starts in <1s
-          Phase 2 — news pre-fetched in a background thread while Phase 1 plays,
-                    delivered as ready text (no Gemini tool-call round-trip) and
-                    shown on the UI content panel. Waits for turn_complete event
-                    instead of a fixed sleep so there is no unnecessary gap.
+        Two-phase startup briefing:
+          Phase 1 — instant greeting: states time, warmly greets user, and states
+                    checking for new messages or tasks from partner.
+          Phase 2 — checks partner chat messages and pending tasks, announces them
+                    or announces all clear, and updates the UI content panel.
         """
         memory   = load_memory()
         identity = memory.get("identity", {})
@@ -1755,22 +1845,23 @@ class JarvisLive:
         name = _val("name")
         time_str = datetime.now().strftime("%H:%M")
 
-        # Start fetching news immediately — runs in parallel while phase 1 plays
         loop = asyncio.get_event_loop()
-        news_future = loop.run_in_executor(None, _fetch_news_sync, "top world news today")
+        partner_future = loop.run_in_executor(None, self._fetch_partner_updates_sync)
 
         await asyncio.sleep(0.3)
         if not self.session:
             return
 
+        # Read quick initial partner metadata
+        pinfo = self._fetch_partner_updates_sync()
+        partner_name = pinfo.get("partnerName") or "her"
+        display_user = pinfo.get("userName") or name
+
         # ── Phase 1: instant greeting ─────────────────────────────────────────
-        # The briefing fires before the user has said anything, so the
-        # remembered language is the only signal there is. It is a starting
-        # point, not a setting: the moment they reply, their language wins.
         lang_clause = (f" Speak this greeting in {lang}, then follow the "
                        f"user's own language from their first reply onward."
                        if lang else "")
-        name_clause = f" Address the user as {name}." if name else ""
+        name_clause = f" Address the user as {display_user}." if display_user else ""
 
         # Inject last session context if available — pop removes it so it's never repeated
         last = await asyncio.to_thread(pop_last_session)
@@ -1786,7 +1877,7 @@ class JarvisLive:
             )
 
         p1 = (
-            f"Greet the user warmly, mention it is {time_str}, and say you are fetching today's news now.{session_clause} "
+            f"Greet the user warmly, mention it is {time_str}, and say you are checking if there are any new messages or tasks from {partner_name}.{session_clause} "
             f"Keep it to 2 short sentences max. Do not call any tools.{lang_clause}{name_clause}"
         )
 
@@ -1801,15 +1892,13 @@ class JarvisLive:
         print("[JARVIS] Briefing phase 1 (greeting) sent.")
 
         # ── Phase 2: fire as soon as Phase 1 audio is done ───────────────────
-        async def _deliver_news():
+        async def _deliver_partner_briefing():
             try:
                 lang_str = (f" Speak in {lang} unless the user has since "
                             f"spoken another language, in which case use theirs."
                             if lang else "")
 
-                # Wait for news fetch (already running) and Phase 1 turn-complete
-                # in parallel — whichever takes longer determines the wait time
-                news_done   = asyncio.wrap_future(news_future)
+                partner_done = asyncio.wrap_future(partner_future)
                 turn_waited = False
                 if self._turn_done_event:
                     try:
@@ -1818,56 +1907,82 @@ class JarvisLive:
                     except asyncio.TimeoutError:
                         pass
 
-                # Extra buffer: turn_complete fires when Gemini finishes *generating*
-                # Phase 1, but audio may still be playing.  Waiting a beat here
-                # prevents Phase 2 audio from arriving while Phase 1 is mid-sentence
-                # (which sounds like a "repeated first response" to the user).
                 if turn_waited:
                     await asyncio.sleep(0.8)
                 else:
                     await asyncio.sleep(1.0)
 
                 try:
-                    news_text = await asyncio.wait_for(news_done, timeout=8.0)
+                    pdata = await asyncio.wait_for(partner_done, timeout=4.0)
                 except Exception as e:
-                    self.ui.write_log(f"SYS: News fetch timed out/failed: {e!r}")
-                    news_text = ""
+                    self.ui.write_log(f"SYS: Partner update fetch timed out: {e!r}")
+                    pdata = {"newMessages": [], "pendingTasks": [], "partnerName": partner_name}
 
                 if not self.session:
                     return
 
-                failed = (not news_text) or news_text.startswith(
-                    ("No news found", "Search failed", "Please provide")
-                )
-                if not failed:
-                    # Show on UI content panel immediately
-                    self.ui.show_content("NEWS — top world news today", news_text)
+                new_msgs = pdata.get("newMessages", [])
+                pending_tasks = pdata.get("pendingTasks", [])
+                p_name = pdata.get("partnerName") or partner_name
 
-                    p2 = (
-                        f"[BRIEFING] Here are today's top news headlines:\n{news_text}\n\n"
-                        "Pick ONE headline, summarise it in one sentence, then say the full list "
-                        f"is displayed on screen. Do not call any tools.{lang_str}"
+                # Show content card in UI
+                card_lines = [f"Partner Updates: {p_name}", ""]
+                if new_msgs:
+                    card_lines.append(f"📬 New Messages ({len(new_msgs)}):")
+                    for m in new_msgs[-3:]:
+                        snd = m.get("sender") or p_name
+                        card_lines.append(f"  • {snd}: \"{m.get('text', '')}\"")
+                else:
+                    card_lines.append("📬 No new unread messages.")
+
+                card_lines.append("")
+                if pending_tasks:
+                    card_lines.append(f"📋 Pending Tasks ({len(pending_tasks)}):")
+                    for t in pending_tasks[:4]:
+                        t_lbl = f" [{t.get('time')}]" if t.get("time") else ""
+                        card_lines.append(f"  • {t.get('title', 'Task')}{t_lbl}")
+                else:
+                    card_lines.append("📋 No pending tasks.")
+
+                summary_card = "\n".join(card_lines)
+                self.ui.show_content(f"PARTNER UPDATES — {p_name}", summary_card)
+
+                briefing_details = []
+                if new_msgs:
+                    latest = new_msgs[-1]
+                    snd = latest.get("sender") or p_name
+                    briefing_details.append(
+                        f"There are {len(new_msgs)} new message(s) from {p_name}. Latest from {snd}: \"{latest.get('text', '')}\"."
                     )
                 else:
-                    self.ui.write_log(
-                        f"SYS: News unavailable — backend returned: {news_text[:120]!r}"
+                    briefing_details.append(f"No new messages from {p_name}.")
+
+                if pending_tasks:
+                    task_titles = ", ".join([f'\"{t.get("title")}\"' for t in pending_tasks[:2]])
+                    briefing_details.append(
+                        f"There are {len(pending_tasks)} pending task(s) from {p_name}, including {task_titles}."
                     )
-                    p2 = (
-                        "News headlines could not be fetched right now. "
-                        f"Let the user know briefly.{lang_str}"
-                    )
+                else:
+                    briefing_details.append(f"No pending tasks from {p_name}.")
+
+                details_str = " ".join(briefing_details)
+                p2 = (
+                    f"[BRIEFING] Here is the status for {p_name}:\n{details_str}\n\n"
+                    f"In 1 or 2 natural, concise sentences, inform the user about {p_name}'s messages and tasks. "
+                    "If there are none, simply let the user know they are all caught up. Do not call any tools."
+                    f"{lang_str}"
+                )
 
                 await self.session.send_client_content(
                     turns={"role": "user", "parts": [{"text": p2}]},
                     turn_complete=True,
                 )
-                print("[JARVIS] Briefing phase 2 (news) sent.")
+                print("[JARVIS] Briefing phase 2 (partner updates) sent.")
             except Exception as e:
                 print(f"[Briefing] Phase 2 error: {e}")
-                print(f"[JARVIS] Briefing phase 2 failed: {e}")
-                self.ui.write_log("SYS: Could not fetch the news for the briefing.")
+                self.ui.write_log("SYS: Could not deliver partner updates briefing.")
 
-        asyncio.create_task(_deliver_news())
+        asyncio.create_task(_deliver_partner_briefing())
 
     # ── Session memory ──────────────────────────────────────────────────────────
 

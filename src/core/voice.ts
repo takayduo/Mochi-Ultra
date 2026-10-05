@@ -9,6 +9,7 @@ let nextChatId = 1000;
 class VoiceService {
   private onGeometryUpdate?: () => void;
   private currentAudioLevel = 0;
+  private _engineState = "listening";
 
   init(onUpdate?: () => void) {
     this.onGeometryUpdate = onUpdate;
@@ -16,6 +17,7 @@ class VoiceService {
     // Listen for assistant state changes from Mark-LV Python engine
     Bridge.on("ai-state", (state: string) => {
       const st = String(state).toLowerCase();
+      this._engineState = st;
       if (st === "speaking") {
         State.stateOverride = "finished";
         State.triggerEmote("happy");
@@ -93,11 +95,18 @@ class VoiceService {
   }
 
   stopSpeech() {
+    this._engineState = "listening";
+    State.stateOverride = null;
     Bridge.aiInterrupt().catch(() => {});
+    State.notify();
+  }
+
+  isSpeaking(): boolean {
+    return this._engineState === "speaking" || State.stateOverride === "finished";
   }
 
   isBusy(): boolean {
-    return State.stateOverride === "thinking" || State.stateOverride === "finished";
+    return this.isSpeaking() || this._engineState === "thinking" || State.stateOverride === "thinking";
   }
 }
 

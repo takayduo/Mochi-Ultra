@@ -600,6 +600,15 @@ export class Island {
     this.islandEl.addEventListener("mousedown", (e) => {
       Sound.resume();
       State.lastActivity = performance.now();
+
+      // If Mochi is speaking or thinking, ANY click immediately interrupts him and resumes listening
+      if (VoiceManager.isBusy() || VoiceManager.isSpeaking() || State.stateOverride === "finished" || State.stateOverride === "thinking") {
+        VoiceManager.stopSpeech();
+        State.stateOverride = null;
+        State.triggerEmote("surprised");
+        State.notify();
+      }
+
       if (this.fsm.state === "coucou" || State.view === "greeting") {
         this.greeting.interrupt();
         this.fsm.forceHome();
