@@ -377,6 +377,38 @@ setTimeout(() => {
   syncMarkLvConfig(activeSettings);
 }, 1000);
 
+let cachedMarkLvTools = null;
+
+async function getMarkLvToolDeclarations() {
+  if (cachedMarkLvTools) return cachedMarkLvTools;
+  try {
+    const res = await runMochiBridgeCmd("list-actions");
+    if (res && res.success && Array.isArray(res.actions)) {
+      const enabled = activeSettings.activeActions || {};
+      cachedMarkLvTools = res.actions.filter((a) => enabled[a.name] !== false);
+      return cachedMarkLvTools;
+    }
+  } catch (err) {
+    console.warn("Error fetching Mark-LV tool declarations:", err);
+  }
+  return [];
+}
+
+async function captureScreenBase64() {
+  try {
+    const sources = await desktopCapturer.getSources({
+      types: ["screen"],
+      thumbnailSize: { width: 1280, height: 720 },
+    });
+    if (sources && sources.length > 0) {
+      return sources[0].thumbnail.toJPEG(85).toString("base64");
+    }
+  } catch (err) {
+    console.warn("captureScreenBase64 error:", err);
+  }
+  return null;
+}
+
 let activeRemoteRole = null;
 let pendingViewerSignals = [];
 let lastPartnerOnline = false;
@@ -1553,35 +1585,114 @@ You have direct autonomous PC control capabilities! When asked to perform system
     finalQuery = `[Attached File: "${context.name}" (local path: ${context.path})]\n\n${query}`;
   }
 
-  // 1. Google Gemini API (Free tier)
+  // 1. Google Gemini API (With Mark-LV Autonomous Function Calling & Vision)
   if (provider === "gemini") {
     const key = activeSettings.geminiApiKey;
     if (!key) {
       return { text: "Please enter your free Google Gemini API Key in Settings (⚙️) to chat with me!" };
     }
-    const model = activeSettings.geminiModel || "gemini-3.5-flash";
+    const tools = await getMarkLvToolDeclarations();
+    const model = "gemini-2.5-flash";
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
 
-    const res = await fetch(url, {
+    const userParts = [{ text: `${systemPrompt}\n\nUser asks: ${finalQuery}` }];
+
+    // Auto-attach high-resolution screen capture if the query asks about the screen or visual desktop
+    const isVisionQuery = /\b(what('s| is)? (on|in) my screen|look at (my|the) screen|see (my|the) screen|read (my|the) screen|check (my|the) screen|what do you see|on my desktop|what is this)\b/i.test(finalQuery);
+    if (isVisionQuery) {
+      try {
+        const screenshotBase64 = await captureScreenBase64();
+        if (screenshotBase64) {
+          userParts.push({
+            inlineData: {
+              mimeType: "image/jpeg",
+              data: screenshotBase64,
+            },
+          });
+          userParts.push({ text: "[Attached: High-resolution live capture of the user's active screen]" });
+        }
+      } catch (visErr) {
+        console.warn("Screen capture error for vision:", visErr);
+      }
+    }
+
+    const contents = [{ role: "user", parts: userParts }];
+    const reqBody = { contents };
+    if (tools && tools.length > 0) {
+      reqBody.tools = [{ functionDeclarations: tools }];
+    }
+
+    let res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [
-          {
-            role: "user",
-            parts: [{ text: `${systemPrompt}\n\nUser asks: ${finalQuery}` }],
-          },
-        ],
-      }),
+      body: JSON.stringify(reqBody),
     });
 
     if (!res.ok) {
       const errText = await res.text();
-      throw new Error(`Gemini error (${res.status}): ${errText}`);
+      // Automatic fallback ladder like Mark-LV core/gemini.py
+      if (res.status === 404 || res.status === 429) {
+        const fallbackUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${key}`;
+        res = await fetch(fallbackUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(reqBody),
+        });
+      }
+      if (!res.ok) {
+        throw new Error(`Gemini error (${res.status}): ${errText}`);
+      }
     }
 
-    const data = await res.json();
-    const reply = data.candidates?.[0]?.content?.parts?.[0]?.text || "Mochi is thinking...";
+    let data = await res.json();
+    let candidate = data.candidates?.[0];
+    let parts = candidate?.content?.parts || [];
+
+    // Check for Autonomous Function Call from Gemini
+    const functionCallPart = parts.find((p) => p.functionCall);
+    if (functionCallPart) {
+      const fc = functionCallPart.functionCall;
+      console.log(`[Mark-LV Engine] Autonomous function call from Gemini: ${fc.name}`, fc.args);
+
+      // Execute tool via Python bridge
+      const execRes = await runMochiBridgeCmd("execute", fc.name, JSON.stringify(fc.args || {}));
+      const toolOutput = execRes && execRes.success ? (execRes.result || "Done.") : (execRes?.error || "Action executed.");
+      console.log(`[Mark-LV Engine] Tool result:`, toolOutput);
+
+      // Multi-turn: Send tool execution result back to Gemini so it speaks naturally
+      contents.push({ role: "model", parts: [functionCallPart] });
+      contents.push({
+        role: "function",
+        parts: [{
+          functionResponse: {
+            name: fc.name,
+            response: { result: String(toolOutput) },
+          },
+        }],
+      });
+
+      try {
+        const followUpRes = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ contents, tools: reqBody.tools }),
+        });
+        if (followUpRes.ok) {
+          const followUpData = await followUpRes.json();
+          const followUpReply = followUpData.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (followUpReply) {
+            await processAITags(followUpReply);
+            return { text: cleanAITags(followUpReply) };
+          }
+        }
+      } catch (followErr) {
+        console.warn("Gemini follow-up error:", followErr);
+      }
+
+      return { text: typeof toolOutput === "string" ? toolOutput : "Task completed successfully! ✨" };
+    }
+
+    const reply = parts[0]?.text || "Mochi is thinking...";
     await processAITags(reply);
     return { text: cleanAITags(reply) };
   }
@@ -1829,6 +1940,7 @@ ipcMain.handle("marklv-launch-hud", async () => {
 ipcMain.handle("save-settings", (_event, newSettings) => {
   const oldAutostart = activeSettings.autostart;
   activeSettings = { ...activeSettings, ...newSettings };
+  cachedMarkLvTools = null;
   saveSettings(activeSettings);
   if (oldAutostart !== activeSettings.autostart) {
     applyStartupMode(activeSettings.autostart);

@@ -49,5 +49,6 @@ __pycache__/
 venv/
 .venv/
 engine/config/api_keys.json
+engine/config/certs/
 engine/memory/long_term.json
 engine/memory/sessions.json

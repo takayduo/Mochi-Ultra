@@ -84,21 +84,6 @@ function aiSection(): HTMLElement {
       }
     });
 
-    const geminiModelSelect = h("select", { style: "flex:1 1 auto;min-width:0" }) as HTMLSelectElement;
-    geminiModelSelect.append(
-      h("option", { value: "gemini-2.5-flash", text: "gemini-2.5-flash (Recommended — High-Speed & 100% Active)" }),
-      h("option", { value: "gemini-flash-latest", text: "gemini-flash-latest (Always Points to Latest Stable Flash)" }),
-      h("option", { value: "gemini-2.5-flash-lite", text: "gemini-2.5-flash-lite (Ultra-Low Latency Free Tier)" }),
-      h("option", { value: "gemini-3.5-flash", text: "gemini-3.5-flash (Next-Gen Multimodal)" }),
-      h("option", { value: "gemini-2.5-pro", text: "gemini-2.5-pro (Deep Reasoning & Analysis)" }),
-      h("option", { value: "gemini-pro-latest", text: "gemini-pro-latest (Latest Pro Model)" })
-    );
-    geminiModelSelect.value = settings.geminiModel || "gemini-2.5-flash";
-    geminiModelSelect.addEventListener("change", () => {
-      settings.geminiModel = geminiModelSelect.value;
-      void save();
-    });
-
     // 2. OpenRouter
     const openrouterInput = h("input", {
       type: "password",
@@ -165,17 +150,20 @@ function aiSection(): HTMLElement {
       void save();
     });
 
-
     body.append(
-      h("div", { class: "group-title", text: "Google Gemini (Free Tier)" }),
+      h("div", { class: "group-title", text: "Google Gemini (Autonomous PC Control Brain)" }),
       h("div", { class: "row" }, h("label", { text: "API Key" }), geminiInput, geminiSave, geminiStatus),
-      h("div", { class: "row" }, h("label", { text: "Free Model" }), geminiModelSelect),
+      h("div", {
+        class: "hint",
+        style: "margin-top:-4px;margin-bottom:6px;font-size:11.5px;",
+        text: "Just save your Google Gemini API Key. Mark-LV engine automatically activates autonomous PC control, tool calling, vision, and reasoning without manual model picking.",
+      }),
 
-      h("div", { class: "group-title", text: "OpenRouter (Free Models)" }),
+      h("div", { class: "group-title", text: "OpenRouter (Alternative Free Models)" }),
       h("div", { class: "row" }, h("label", { text: "API Key" }), openrouterInput, openrouterSave, openrouterStatus),
       h("div", { class: "row" }, h("label", { text: "Free Model" }), openrouterModelSelect),
 
-      h("div", { class: "group-title", text: "Groq (Free LPU API Key)" }),
+      h("div", { class: "group-title", text: "Groq (Lightning Fast LPUs)" }),
       h("div", { class: "row" }, h("label", { text: "API Key" }), groqInput, groqSave, groqStatus),
       h("div", { class: "row" }, h("label", { text: "Free Model" }), groqModelSelect)
     );
@@ -275,41 +263,10 @@ function markLvSection(): HTMLElement {
       void save();
     });
 
-    const hudStyleSelect = h("select", { style: "flex:1 1 auto;max-width:260px;" }) as HTMLSelectElement;
-    hudStyleSelect.append(
-      h("option", { value: "face", text: "Animated Holographic Cyber Face" }),
-      h("option", { value: "core", text: "Arc Reactor Pulsing Core" })
-    );
-    hudStyleSelect.value = settings.hudStyle || "face";
-    hudStyleSelect.addEventListener("change", () => {
-      settings.hudStyle = hudStyleSelect.value as any;
-      void save();
-    });
-
-    const launchHudBtn = h("button", {
-      class: "primary",
-      style: "background:#00d4ff;color:#000;font-weight:600;padding:7px 18px;",
-      text: "🚀 Launch 3D Holographic HUD",
-    });
-    launchHudBtn.addEventListener("click", async () => {
-      launchHudBtn.setAttribute("disabled", "true");
-      launchHudBtn.textContent = "Launching HUD...";
-      try {
-        await Bridge.markLvLaunchHud();
-      } finally {
-        setTimeout(() => {
-          launchHudBtn.removeAttribute("disabled");
-          launchHudBtn.textContent = "🚀 Launch 3D Holographic HUD";
-        }, 1500);
-      }
-    });
-
     body.append(
-      h("div", { class: "group-title", text: "Holographic Avatar & Voice Model" }),
+      h("div", { class: "group-title", text: "Assistant Persona & Live Voice" }),
       h("div", { class: "row" }, h("label", { text: "Assistant Name" }), assistantNameInput),
-      h("div", { class: "row" }, h("label", { text: "Gemini Live Voice" }), voiceSelect),
-      h("div", { class: "row" }, h("label", { text: "HUD Centerpiece" }), hudStyleSelect),
-      h("div", { class: "row", style: "margin-top:4px;" }, h("label", { text: "Mark-LV Display" }), launchHudBtn)
+      h("div", { class: "row" }, h("label", { text: "Live Voice Model" }), voiceSelect)
     );
 
     // ── Group 2: Voice Gating & Conversational Tuning ──
