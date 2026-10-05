@@ -65,35 +65,21 @@ function userProfileBadge(): HTMLElement {
   return badge;
 }
 
-function providerBadge(): HTMLElement {
-  const current = State.settings.aiProvider || "gemini";
-  let label = "✨ Gemini 2.5";
-  let color = "#3b82f6";
-  if (current === "groq" || current === "grok") {
-    label = "⚡ Groq LPUs";
-    color = "#f97316";
-  } else if (current === "openrouter") {
-    label = "🌐 OpenRouter";
-    color = "#a855f7";
-  }
-
+function engineBadge(): HTMLElement {
+  const voice = State.settings.voiceName || "Charon";
   const badge = h(
     "button",
     {
       class: "chip",
-      title: "Click to switch AI provider instantly (Groq / Gemini / OpenRouter)",
+      title: `Gemini Live Engine (Voice: ${voice}). Click to configure in Settings.`,
       style: "cursor:pointer;border:none;background:rgba(255,255,255,0.08);padding:3px 8px;border-radius:12px;display:inline-flex;align-items:center;gap:5px;font-size:11px;color:rgba(255,255,255,0.85);margin-right:6px",
-      onclick: async () => {
+      onclick: () => {
         Sound.play("blip");
-        const next = current === "gemini" ? "groq" : current === "groq" ? "openrouter" : "gemini";
-        State.settings.aiProvider = next as any;
-        await Bridge.saveSettings(State.settings);
-        State.notify();
+        void Bridge.openSettingsWindow();
       },
     },
-    h("i", { class: "chip-dot", style: `background:${color}` }),
-    h("span", { text: label }),
-    h("span", { style: "opacity:0.45;font-size:10px", text: "⇄" })
+    h("i", { class: "chip-dot", style: "background:#3b82f6" }),
+    h("span", { text: `🎙️ ${voice}` })
   );
   return badge;
 }
@@ -136,7 +122,12 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
 
     try {
       const reply = await Bridge.chatSend(query, context);
-      State.chatHistory.push({ id: nextId++, role: "assistant", content: reply.text });
+      if (reply && reply.text && reply.text !== "(Command sent to Mochi)") {
+        const lastMsg = State.chatHistory[State.chatHistory.length - 1];
+        if (!lastMsg || lastMsg.content !== reply.text) {
+          State.chatHistory.push({ id: nextId++, role: "assistant", content: reply.text });
+        }
+      }
       State.stateOverride = null;
       State.triggerEmote("happy");
       Sound.play("finish");
@@ -165,16 +156,16 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
   return {
     el,
     sync() {
-      const curProv = State.settings.aiProvider || "gemini";
+      const curVoice = State.settings.voiceName || "Charon";
       const curRole = State.settings.userRole || "me";
       if (
-        chipRow.dataset.provider !== curProv ||
+        chipRow.dataset.voice !== curVoice ||
         chipRow.dataset.role !== curRole
       ) {
-        chipRow.dataset.provider = curProv;
+        chipRow.dataset.voice = curVoice;
         chipRow.dataset.role = curRole;
         clear(chipRow);
-        chipRow.append(userProfileBadge(), providerBadge());
+        chipRow.append(userProfileBadge(), engineBadge());
       }
 
       const thinking = State.stateOverride === "thinking";

@@ -36,22 +36,9 @@ function aiSection(): HTMLElement {
   const section = h(
     "section",
     {},
-    h("h2", {}, statusDot(true), h("span", { text: "AI Models & API Keys" })),
+    h("h2", {}, statusDot(true), h("span", { text: "Google Gemini Live AI Engine" })),
     body
   );
-
-  const providerSelect = h("select", {}) as HTMLSelectElement;
-  providerSelect.append(
-    h("option", { value: "gemini", text: "Google Gemini (Free API Key)" }),
-    h("option", { value: "openrouter", text: "OpenRouter (Free Top Models)" }),
-    h("option", { value: "groq", text: "Groq (Lightning Fast LPUs - Free Key)" })
-  );
-  providerSelect.value = settings.aiProvider === "grok" ? "groq" : (settings.aiProvider || "gemini");
-  providerSelect.addEventListener("change", () => {
-    settings.aiProvider = providerSelect.value as any;
-    void save();
-    draw();
-  });
 
   function draw() {
     clear(body);
@@ -59,15 +46,14 @@ function aiSection(): HTMLElement {
     body.append(
       h("div", {
         class: "hint",
-        text: "Select your active AI provider and add your API keys. Mochi will answer schedule questions, execute commands, and launch desktop apps for both of you.",
-      }),
-      h("div", { class: "row" }, h("label", { text: "Active Provider" }), providerSelect)
+        text: "Mochi Ultra is powered directly by Google Gemini Live and Mark-LV's autonomous agent architecture. Enter your Google Gemini API key to activate real-time human conversational speech, vision, and full autonomous PC control.",
+      })
     );
 
-    // 1. Gemini
+    // Gemini API Key Input
     const geminiInput = h("input", {
       type: "password",
-      placeholder: settings.geminiApiKey ? "•••••••••••• (saved)" : "AIzaSy...",
+      placeholder: settings.geminiApiKey ? "•••••••••••• (saved)" : "AIzaSy... or AQ....",
       value: "",
     }) as HTMLInputElement;
     const geminiSave = h("button", { class: "primary", text: "Save" });
@@ -84,88 +70,14 @@ function aiSection(): HTMLElement {
       }
     });
 
-    // 2. OpenRouter
-    const openrouterInput = h("input", {
-      type: "password",
-      placeholder: settings.openrouterApiKey ? "•••••••••••• (saved)" : "sk-or-v1-...",
-      value: "",
-    }) as HTMLInputElement;
-    const openrouterSave = h("button", { class: "primary", text: "Save" });
-    const openrouterStatus = statusDot(!!settings.openrouterApiKey);
-
-    openrouterSave.addEventListener("click", async () => {
-      const val = openrouterInput.value.trim();
-      if (val) {
-        settings.openrouterApiKey = val;
-        openrouterInput.value = "";
-        openrouterInput.placeholder = "•••••••••••• (saved)";
-        openrouterStatus.style.background = "#22c55e";
-        await save();
-      }
-    });
-
-    const openrouterModelSelect = h("select", { style: "flex:1 1 auto;min-width:0" }) as HTMLSelectElement;
-    openrouterModelSelect.append(
-      h("option", { value: "meta-llama/llama-3.3-70b-instruct:free", text: "meta-llama/llama-3.3-70b-instruct:free (Recommended 70B)" }),
-      h("option", { value: "qwen/qwen3.8-27b:free", text: "qwen/qwen3.8-27b:free (Fast 27B Free)" }),
-      h("option", { value: "nvidia/nemotron-3.5-lightning:free", text: "nvidia/nemotron-3.5-lightning:free (NVIDIA Lightning Free)" }),
-      h("option", { value: "liquid/lfm-2.5-2.6b:free", text: "liquid/lfm-2.5-2.6b:free (Ultra Fast Free)" })
-    );
-    openrouterModelSelect.value = settings.openrouterModel || "meta-llama/llama-3.3-70b-instruct:free";
-    openrouterModelSelect.addEventListener("change", () => {
-      settings.openrouterModel = openrouterModelSelect.value;
-      void save();
-    });
-
-    // 3. Groq (GroqCloud LPUs)
-    const groqInput = h("input", {
-      type: "password",
-      placeholder: (settings.groqApiKey || settings.grokApiKey) ? "•••••••••••• (saved)" : "gsk_...",
-      value: "",
-    }) as HTMLInputElement;
-    const groqSave = h("button", { class: "primary", text: "Save" });
-    const groqStatus = statusDot(!!(settings.groqApiKey || settings.grokApiKey));
-
-    groqSave.addEventListener("click", async () => {
-      const val = groqInput.value.trim();
-      if (val) {
-        settings.groqApiKey = val;
-        groqInput.value = "";
-        groqInput.placeholder = "•••••••••••• (saved)";
-        groqStatus.style.background = "#22c55e";
-        await save();
-      }
-    });
-
-    const groqModelSelect = h("select", { style: "flex:1 1 auto;min-width:0" }) as HTMLSelectElement;
-    groqModelSelect.append(
-      h("option", { value: "openai/gpt-oss-120b", text: "openai/gpt-oss-120b (Recommended — Top 120B on Groq LPUs, 0.2s)" }),
-      h("option", { value: "openai/gpt-oss-20b", text: "openai/gpt-oss-20b (Fast 20B on Groq LPUs)" }),
-      h("option", { value: "qwen/qwen3.8-27b", text: "qwen/qwen3.8-27b (Qwen 3.8 27B on Groq)" }),
-      h("option", { value: "allam-2-7b", text: "allam-2-7b (Allam 7B on Groq)" })
-    );
-    groqModelSelect.value = settings.groqModel || "openai/gpt-oss-120b";
-    groqModelSelect.addEventListener("change", () => {
-      settings.groqModel = groqModelSelect.value;
-      void save();
-    });
-
     body.append(
-      h("div", { class: "group-title", text: "Google Gemini (Autonomous PC Control Brain)" }),
+      h("div", { class: "group-title", text: "Gemini Live API Key" }),
       h("div", { class: "row" }, h("label", { text: "API Key" }), geminiInput, geminiSave, geminiStatus),
       h("div", {
         class: "hint",
-        style: "margin-top:-4px;margin-bottom:6px;font-size:11.5px;",
-        text: "Just save your Google Gemini API Key. Mark-LV engine automatically activates autonomous PC control, tool calling, vision, and reasoning without manual model picking.",
-      }),
-
-      h("div", { class: "group-title", text: "OpenRouter (Alternative Free Models)" }),
-      h("div", { class: "row" }, h("label", { text: "API Key" }), openrouterInput, openrouterSave, openrouterStatus),
-      h("div", { class: "row" }, h("label", { text: "Free Model" }), openrouterModelSelect),
-
-      h("div", { class: "group-title", text: "Groq (Lightning Fast LPUs)" }),
-      h("div", { class: "row" }, h("label", { text: "API Key" }), groqInput, groqSave, groqStatus),
-      h("div", { class: "row" }, h("label", { text: "Free Model" }), groqModelSelect)
+        style: "margin-top:-4px;font-size:11.5px;",
+        text: "Get your free API key at aistudio.google.com. No model selection needed — Mochi Ultra automatically uses Gemini Live preview models for sub-300ms bidirectional speech and 17 autonomous tools.",
+      })
     );
   }
 

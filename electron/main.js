@@ -1333,550 +1333,195 @@ function closeApplication(appNameOrPath) {
   });
 }
 
-// ── AI Engine (Gemini / OpenRouter / Grok) ───────────────────────────────────
+// ── Mark-LV Live Assistant Process Manager ──────────────────────────────────
+let mochiLiveProc = null;
+let mochiLiveRestartTimer = null;
+let pendingTextResolvers = [];
 
-async function callAI(query, context) {
-  const provider = activeSettings.aiProvider || "gemini";
-  const userRole = activeSettings.userRole || "me";
-  const partnerRole = userRole === "me" ? "her" : "me";
-
-  // When userRole is "me": this PC belongs to userName (Badsha), partner is partnerName (Ayzil)
-  // When userRole is "her": this PC belongs to partnerName (Ayzil), partner is userName (Badsha)
-  const currentUserName = userRole === "me" 
-    ? (activeSettings.userName || "Badsha") 
-    : (activeSettings.partnerName || "Ayzil");
-  const partnerUserName = userRole === "me" 
-    ? (activeSettings.partnerName || "Ayzil") 
-    : (activeSettings.userName || "Badsha");
-
-  // Separate tasks strictly by assignee
-  const myTasks = activeSchedule.filter((s) => s.assignee === userRole);
-  const partnerTasks = activeSchedule.filter((s) => s.assignee === partnerRole);
-
-  const myTasksText = myTasks.length > 0
-    ? myTasks.map((s) => `• [${s.completed ? "DONE" : "PENDING"}] ${s.time} - ${s.title}${s.assignedBy === partnerRole ? ` (set by ${partnerUserName})` : ""}`).join("\n")
-    : "No tasks scheduled for today.";
-
-  const partnerTasksText = partnerTasks.length > 0
-    ? partnerTasks.map((s) => `• [${s.completed ? "DONE" : "PENDING"}] ${s.time} - ${s.title}${s.assignedBy === userRole ? ` (set by ${currentUserName})` : ""}`).join("\n")
-    : "No tasks scheduled for today.";
-
-  const systemPrompt = `You are Mochi, a super cute, warm, energetic, and snappy AI desktop companion for YouTube creator couple ${currentUserName} and ${partnerUserName}.
-CURRENT ACTIVE USER ON THIS PC: ${currentUserName}
-THEIR PARTNER: ${partnerUserName}
-
---- ${currentUserName.toUpperCase()}'S TASKS (${currentUserName}'s Personal Schedule) ---
-${myTasksText}
-
---- ${partnerUserName.toUpperCase()}'S TASKS (${partnerUserName}'s Personal Schedule) ---
-${partnerTasksText}
-
-Configured Apps: ${Object.keys(activeSettings.appPaths || {}).join(", ")}
-
-CRITICAL IDENTITY & TASK OWNERSHIP RULES:
-1. You are speaking directly to ${currentUserName}.
-2. When ${currentUserName} asks about "my task", "my tasks", "my schedule", "what do I have to do", or "what should I do":
-   -> You MUST ONLY list ${currentUserName}'s tasks.
-   -> NEVER list, count, or mix up ${partnerUserName}'s tasks as ${currentUserName}'s tasks!
-3. Only if ${currentUserName} specifically asks about ${partnerUserName} (e.g. "what does ${partnerUserName} have to do", "her tasks", "${partnerUserName}'s schedule"):
-   -> Tell them about ${partnerUserName}'s tasks.
-4. If ${currentUserName} asks for "both of our tasks" or "all tasks":
-   -> Clearly separate who has what: tell them what ${currentUserName} has to do, and what ${partnerUserName} has to do.
-5. Answer length: Keep answers VERY SHORT, sweet, and assistant-friendly (maximum 1-2 short sentences!).
-6. Spoken natural style: Do NOT use markdown symbols (no **, ##, *, backticks) or bullet spam in spoken answers. Speak naturally so it sounds warm and clean out loud.
-7. If asked to open/launch an app: Say e.g. "Opening Discord right now! 🚀" and append [LAUNCH: app_name].
-8. If asked to close/exit/kill/quit an app: Say e.g. "Closing Discord for you! ✨" and append [CLOSE: app_name].
-9. If asked to add a task for ${currentUserName}: Confirm and append [ADD_TASK: {"title":"...","time":"...","for":"${userRole}"}].
-10. If asked to add a task for ${partnerUserName}: Confirm and append [ADD_TASK: {"title":"...","time":"...","for":"${partnerRole}"}].
-11. If asked to mark done: Confirm in one line and append [MARK_DONE: task_id_or_title].
-12. If asked to send/text a message to ${partnerUserName}: Confirm in a sweet sentence and append [SEND_CHAT: {"text":"..."}].
-13. Be sweet, playful, and cheerful with cute emojis!
-14. FULL AUTONOMOUS PC CONTROL (Mark-LV Engine):
-You have direct autonomous PC control capabilities! When asked to perform system or computer tasks, confirm in a short cheerful sentence and append [ACTION: {"name":"<action>","parameters":{...}}].
-- System settings: volume_up, volume_down, volume_set, mute, brightness_up, brightness_down, sleep_display, full_screen, minimize, maximize, snap_left, snap_right, switch_window, show_desktop, task_manager, lock_screen -> [ACTION: {"name":"computer_settings","parameters":{"action":"volume_up"}}]
-- Mouse & Keyboard: click, double_click, right_click, type, hotkey, scroll, move, screenshot -> [ACTION: {"name":"computer_control","parameters":{"action":"..."}}]
-- Web Browsing: [ACTION: {"name":"browser_control","parameters":{"action":"open","url":"..."}}]
-- Web Search: [ACTION: {"name":"web_search","parameters":{"query":"..."}}]
-- YouTube: [ACTION: {"name":"youtube_video","parameters":{"query":"..."}}]
-- Weather: [ACTION: {"name":"weather_report","parameters":{"city":"..."}}]
-- Flights: [ACTION: {"name":"flight_finder","parameters":{"origin":"...","destination":"...","date":"..."}}]
-- Games (Steam/Epic): [ACTION: {"name":"game_updater","parameters":{"action":"list"}}]
-- File control: [ACTION: {"name":"file_controller","parameters":{"action":"..."}}]
-- Document parsing: [ACTION: {"name":"file_processor","parameters":{"path":"..."}}]
-- Code helper: [ACTION: {"name":"code_helper","parameters":{"code":"..."}}]
-- Dev agent: [ACTION: {"name":"dev_agent","parameters":{"task":"..."}}]`;
-
-  const queryLower = query.toLowerCase();
-
-  // Fast direct keyword checks for checking messages
-  const isAskingNewMessages =
-    /\b(any (new )?(messages?|texts?)|check (my )?(messages?|texts?|inbox)|did (she|he|ayzil|badsha|partner) (text|message|say anything)|unread (messages?|texts?)|read (my )?(messages?|texts?))\b/i.test(queryLower);
-
-  if (isAskingNewMessages) {
-    const history = loadChatHistory();
-    const unread = history.filter((m) => !m.read && (m.sender || "").toLowerCase() !== currentUserName.toLowerCase());
-    if (unread.length === 0) {
-      return { text: `You're all caught up, ${currentUserName}! ✨ No unread messages from ${partnerUserName} right now.` };
-    }
-
-    for (const m of unread) m.read = true;
-    saveChatHistory(history);
-    if (overlayWin && !overlayWin.isDestroyed()) {
-      overlayWin.webContents.send("partner-chat-received");
-    }
-
-    const count = unread.length;
-    const latest = unread[unread.length - 1];
-    const minutesAgo = Math.max(1, Math.round((Date.now() - latest.timestamp) / 60000));
-    const timeStr = minutesAgo < 60 ? `${minutesAgo} minute${minutesAgo === 1 ? "" : "s"} ago` : "recently";
-
-    if (count === 1) {
-      return { text: `You have 1 unread message from ${partnerUserName}. ${timeStr} ${partnerUserName} said: "${latest.text}" 💌` };
-    } else {
-      const msgsSummary = unread.map((m) => `"${m.text}"`).join(", and then ");
-      return { text: `You have ${count} unread messages from ${partnerUserName}. ${partnerUserName} said: ${msgsSummary} 💌` };
-    }
-  }
-
-  // Fast direct check for sending message to partner
-  const sendMsgMatch =
-    /^(?:send a message to|message|text|tell)\s+(?:ayzil|badsha|her|him|partner)\s*[:,-]?\s*(.+)$/i.exec(query) ||
-    /^reply\s*[:,-]?\s*(.+)$/i.exec(query);
-
-  if (sendMsgMatch) {
-    const messageText = (sendMsgMatch[1] || "").trim();
-    if (messageText) {
-      const history = loadChatHistory();
-      const newMsg = {
-        id: "msg_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
-        sender: currentUserName,
-        recipient: partnerUserName,
-        text: messageText,
-        timestamp: Date.now(),
-        read: true,
-        isAiGenerated: true,
-      };
-      history.push(newMsg);
-      saveChatHistory(history);
-
+function syncEngineConfig(settings) {
+  try {
+    const configPath = path.join(engineDir, 'config', 'api_keys.json');
+    let currentConfig = {};
+    if (fs.existsSync(configPath)) {
       try {
-        await broadcastChatMessage(newMsg);
-      } catch (err) {
-        console.warn("[AI Dispatch Chat] Error broadcasting:", err);
-      }
-
-      if (overlayWin && !overlayWin.isDestroyed()) {
-        overlayWin.webContents.send("partner-chat-received", newMsg);
-      }
-
-      return { text: `Sent to ${partnerUserName}: "${messageText}" 💌` };
+        currentConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+      } catch {}
     }
+    const updatedConfig = {
+      ...currentConfig,
+      gemini_api_key: settings.geminiApiKey || currentConfig.gemini_api_key || '',
+      assistant_name: settings.assistantName || 'Mochi',
+      user_name: settings.userName || 'Me',
+      voice_name: settings.voiceName || 'Charon',
+      wake_word_enabled: !!settings.wakeWordEnabled,
+      push_to_talk_enabled: !!settings.pushToTalkEnabled,
+      proactive_audio: settings.proactiveAudio !== false,
+      thinking_enabled: !!settings.thinkingEnabled,
+      morning_brief_enabled: settings.morningBriefEnabled !== false,
+      media_resolution: settings.mediaResolution || 'medium',
+      input_device: settings.audioInputDevice || '',
+      output_device: settings.audioOutputDevice || '',
+      turn_tuning: {
+        silence_ms: settings.turnSilenceMs || 550,
+        prefix_ms: settings.turnPrefixMs || 150,
+        end_sensitivity: settings.turnEndSensitivity || 'high',
+      },
+      plugins_enabled: settings.activeActions || currentConfig.plugins_enabled || {},
+    };
+    fs.mkdirSync(path.dirname(configPath), { recursive: true });
+    fs.writeFileSync(configPath, JSON.stringify(updatedConfig, null, 4), 'utf-8');
+  } catch (err) {
+    console.warn('[Mark-LV Engine] Failed to write api_keys.json:', err);
+  }
+}
+
+function startMochiLiveEngine() {
+  if (mochiLiveProc) return;
+  if (!activeSettings.geminiApiKey && !process.env.GEMINI_API_KEY) {
+    console.log('[Mark-LV Engine] Gemini API key not set yet. Waiting for key in Settings...');
+    return;
   }
 
-  // Fast direct keyword checks for startup mode
-  if (/\b(enable|turn on|activate)\s+(startup|auto[- ]?start)\b|\b(start|launch|open)\s+(on|with)\s+(startup|boot|pc|windows)\b/i.test(queryLower)) {
-    activeSettings.autostart = true;
-    saveSettings(activeSettings);
-    applyStartupMode(true);
-    if (overlayWin && !overlayWin.isDestroyed()) {
-      overlayWin.webContents.send("settings-changed", activeSettings);
-    }
-    return { text: "Startup mode is now turned ON! 🚀 Mochi will launch instantly whenever your PC turns on." };
-  }
-  if (/\b(disable|turn off|deactivate)\s+(startup|auto[- ]?start)\b|\b(stop|don'?t)\s+(starting|launching|opening)\s+(on|with)\s+(startup|boot|pc|windows)\b/i.test(queryLower)) {
-    activeSettings.autostart = false;
-    saveSettings(activeSettings);
-    applyStartupMode(false);
-    if (overlayWin && !overlayWin.isDestroyed()) {
-      overlayWin.webContents.send("settings-changed", activeSettings);
-    }
-    return { text: "Startup mode is now turned OFF. Mochi will only open when manually launched." };
-  }
+  syncEngineConfig(activeSettings);
 
-  // Fast direct keyword checks for app launching
-  if (queryLower.startsWith("open ") || queryLower.startsWith("launch ")) {
-    const target = query.replace(/^(open|launch)\s+/i, "").trim();
-    const result = await launchApplication(target);
-    if (result.success) {
-      return { text: `Opening ${target} right away! 🚀` };
-    }
-  }
+  const runnerScript = path.join(engineDir, 'mochi_runner.py');
+  console.log('[Mark-LV Engine] Spawning live assistant process:', runnerScript);
 
-  // Fast direct keyword checks for app closing
-  if (
-    queryLower.startsWith("close ") ||
-    queryLower.startsWith("quit ") ||
-    queryLower.startsWith("exit ") ||
-    queryLower.startsWith("kill ") ||
-    queryLower.startsWith("stop ")
-  ) {
-    const target = query.replace(/^(close|quit|exit|kill|stop)\s+/i, "").trim();
-    const result = await closeApplication(target);
-    if (result.success) {
-      return { text: `Closed ${target} for you! ✨` };
-    } else if (result.notRunning) {
-      return { text: `${target} isn't currently open! 😊` };
-    } else {
-      return { text: `Couldn't close ${target}: ${result.error || "app error"}` };
-    }
-  }
-
-  // Fast direct keyword checks for schedule / tasks
-  const isAskingMyTasks =
-    /\b(my task|my tasks|my schedule|my plan|my to[- ]?do|what do i (have to|need to)? do|what('s| is) (my|on my) (task|tasks|schedule)|tell me (about )?my (task|tasks)|what should i do)\b/i.test(queryLower);
-
-  const isAskingPartnerTasks =
-    new RegExp(`\\b(her task|her tasks|his task|his tasks|partner('s)? task|partner('s)? tasks|what does (she|he|${partnerUserName.toLowerCase()}) have to do|${partnerUserName.toLowerCase()}('s)? (task|tasks|schedule)|tell me (about )?${partnerUserName.toLowerCase()}('s)? (task|tasks))\\b`, "i").test(queryLower);
-
-  const isAskingAllTasks =
-    /\b(both of our tasks|both our tasks|all tasks|our tasks|our schedule|what do we have to do)\b/i.test(queryLower);
-
-  if (isAskingMyTasks) {
-    if (myTasks.length === 0) {
-      return { text: `Hey ${currentUserName}! ✨ No tasks scheduled for you right now. Relax or plan with ${partnerUserName}! 🎬` };
-    }
-    const pending = myTasks.filter((s) => !s.completed);
-    let briefing = `Hey ${currentUserName}! ✨ Here's your task list for today:\n`;
-    for (const t of myTasks) {
-      const fromPartner = t.assignedBy === partnerRole ? ` (from ${partnerUserName} 💖)` : "";
-      briefing += `• ${t.completed ? "Done" : "Pending"}: ${t.time} - ${t.title}${fromPartner}\n`;
-    }
-    briefing += `You have ${pending.length} pending task${pending.length === 1 ? "" : "s"}!`;
-    return { text: briefing };
-  }
-
-  if (isAskingPartnerTasks) {
-    if (partnerTasks.length === 0) {
-      return { text: `Hey ${currentUserName}! ✨ ${partnerUserName} has no tasks scheduled yet today. You can add one for them! 💖` };
-    }
-    const pending = partnerTasks.filter((s) => !s.completed);
-    let briefing = `Hey ${currentUserName}! ✨ Here's ${partnerUserName}'s schedule for today:\n`;
-    for (const t of partnerTasks) {
-      const fromYou = t.assignedBy === userRole ? ` (set by you ✨)` : "";
-      briefing += `• ${t.completed ? "Done" : "Pending"}: ${t.time} - ${t.title}${fromYou}\n`;
-    }
-    briefing += `${partnerUserName} has ${pending.length} pending task${pending.length === 1 ? "" : "s"}!`;
-    return { text: briefing };
-  }
-
-  if (isAskingAllTasks) {
-    let briefing = `Hey ${currentUserName}! ✨ Here's both of your schedules for today:\n\n`;
-    briefing += `For ${currentUserName}:\n`;
-    if (myTasks.length === 0) {
-      briefing += `• No tasks scheduled.\n`;
-    } else {
-      for (const t of myTasks) {
-        briefing += `• ${t.completed ? "Done" : "Pending"}: ${t.time} - ${t.title}\n`;
-      }
-    }
-    briefing += `\nFor ${partnerUserName}:\n`;
-    if (partnerTasks.length === 0) {
-      briefing += `• No tasks scheduled.\n`;
-    } else {
-      for (const t of partnerTasks) {
-        briefing += `• ${t.completed ? "Done" : "Pending"}: ${t.time} - ${t.title}\n`;
-      }
-    }
-    return { text: briefing };
-  }
-
-  let finalQuery = query;
-  if (context && context.kind === "file") {
-    finalQuery = `[Attached File: "${context.name}" (local path: ${context.path})]\n\n${query}`;
-  }
-
-  // 1. Google Gemini API (With Mark-LV Autonomous Function Calling & Vision)
-  if (provider === "gemini") {
-    const key = activeSettings.geminiApiKey;
-    if (!key) {
-      return { text: "Please enter your free Google Gemini API Key in Settings (⚙️) to chat with me!" };
-    }
-    const tools = await getMarkLvToolDeclarations();
-    const model = "gemini-2.5-flash";
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
-
-    const userParts = [{ text: `${systemPrompt}\n\nUser asks: ${finalQuery}` }];
-
-    // Auto-attach high-resolution screen capture if the query asks about the screen or visual desktop
-    const isVisionQuery = /\b(what('s| is)? (on|in) my screen|look at (my|the) screen|see (my|the) screen|read (my|the) screen|check (my|the) screen|what do you see|on my desktop|what is this)\b/i.test(finalQuery);
-    if (isVisionQuery) {
-      try {
-        const screenshotBase64 = await captureScreenBase64();
-        if (screenshotBase64) {
-          userParts.push({
-            inlineData: {
-              mimeType: "image/jpeg",
-              data: screenshotBase64,
-            },
-          });
-          userParts.push({ text: "[Attached: High-resolution live capture of the user's active screen]" });
-        }
-      } catch (visErr) {
-        console.warn("Screen capture error for vision:", visErr);
-      }
-    }
-
-    const contents = [{ role: "user", parts: userParts }];
-    const reqBody = { contents };
-    if (tools && tools.length > 0) {
-      reqBody.tools = [{ functionDeclarations: tools }];
-    }
-
-    let res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(reqBody),
+  try {
+    mochiLiveProc = spawn('python', ['mochi_runner.py'], {
+      cwd: engineDir,
+      windowsHide: true,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUNBUFFERED: '1' },
     });
 
-    if (!res.ok) {
-      const errText = await res.text();
-      // Automatic fallback ladder like Mark-LV core/gemini.py
-      if (res.status === 404 || res.status === 429) {
-        const fallbackUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${key}`;
-        res = await fetch(fallbackUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(reqBody),
-        });
-      }
-      if (!res.ok) {
-        throw new Error(`Gemini error (${res.status}): ${errText}`);
-      }
-    }
+    let buffer = '';
 
-    let data = await res.json();
-    let candidate = data.candidates?.[0];
-    let parts = candidate?.content?.parts || [];
+    mochiLiveProc.stdout.on('data', (data) => {
+      buffer += data.toString('utf-8');
+      const lines = buffer.split('\n');
+      buffer = lines.pop();
 
-    // Check for Autonomous Function Call from Gemini
-    const functionCallPart = parts.find((p) => p.functionCall);
-    if (functionCallPart) {
-      const fc = functionCallPart.functionCall;
-      console.log(`[Mark-LV Engine] Autonomous function call from Gemini: ${fc.name}`, fc.args);
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
 
-      // Execute tool via Python bridge
-      const execRes = await runMochiBridgeCmd("execute", fc.name, JSON.stringify(fc.args || {}));
-      const toolOutput = execRes && execRes.success ? (execRes.result || "Done.") : (execRes?.error || "Action executed.");
-      console.log(`[Mark-LV Engine] Tool result:`, toolOutput);
-
-      // Multi-turn: Send tool execution result back to Gemini so it speaks naturally
-      contents.push({ role: "model", parts: [functionCallPart] });
-      contents.push({
-        role: "function",
-        parts: [{
-          functionResponse: {
-            name: fc.name,
-            response: { result: String(toolOutput) },
-          },
-        }],
-      });
-
-      try {
-        const followUpRes = await fetch(url, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ contents, tools: reqBody.tools }),
-        });
-        if (followUpRes.ok) {
-          const followUpData = await followUpRes.json();
-          const followUpReply = followUpData.candidates?.[0]?.content?.parts?.[0]?.text;
-          if (followUpReply) {
-            await processAITags(followUpReply);
-            return { text: cleanAITags(followUpReply) };
+        if (trimmed.startsWith('MOCHI_IPC:')) {
+          try {
+            const jsonStr = trimmed.slice('MOCHI_IPC:'.length);
+            const msg = JSON.parse(jsonStr);
+            handleLiveEngineEvent(msg);
+          } catch (e) {
+            console.warn('[LiveEngine IPC Parse Error]:', e.message, trimmed);
           }
+        } else {
+          console.log(`[Mark-LV Engine]: ${trimmed}`);
         }
-      } catch (followErr) {
-        console.warn("Gemini follow-up error:", followErr);
       }
-
-      return { text: typeof toolOutput === "string" ? toolOutput : "Task completed successfully! ✨" };
-    }
-
-    const reply = parts[0]?.text || "Mochi is thinking...";
-    await processAITags(reply);
-    return { text: cleanAITags(reply) };
-  }
-
-  // 2. OpenRouter API
-  if (provider === "openrouter") {
-    const key = activeSettings.openrouterApiKey;
-    if (!key) {
-      return { text: "Please enter your OpenRouter API Key in Settings (⚙️) to chat with me!" };
-    }
-    const model = activeSettings.openrouterModel || "meta-llama/llama-3.3-70b-instruct:free";
-    const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${key}`,
-        "HTTP-Referer": "https://coucou.creator",
-        "X-Title": "Coucou Creator",
-      },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: finalQuery },
-        ],
-      }),
     });
 
-    if (!res.ok) {
-      const errText = await res.text();
-      throw new Error(`OpenRouter error (${res.status}): ${errText}`);
-    }
-
-    const data = await res.json();
-    const reply = data.choices?.[0]?.message?.content || "Mochi has no words!";
-    await processAITags(reply);
-    return { text: cleanAITags(reply) };
-  }
-
-  // 3. Groq (GroqCloud LPUs) API
-  if (provider === "groq" || provider === "grok") {
-    const key = activeSettings.groqApiKey || activeSettings.grokApiKey;
-    if (!key) {
-      return { text: "Please enter your free Groq API Key (gsk_...) in Settings (⚙️) to chat with me!" };
-    }
-    const model = activeSettings.groqModel || "llama-3.3-70b-versatile";
-    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${key}`,
-      },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: finalQuery },
-        ],
-      }),
+    mochiLiveProc.stderr.on('data', (data) => {
+      const errStr = data.toString('utf-8').trim();
+      if (errStr) console.warn(`[Mark-LV Stderr]: ${errStr}`);
     });
 
-    if (!res.ok) {
-      const errText = await res.text();
-      throw new Error(`Groq error (${res.status}): ${errText}`);
-    }
+    mochiLiveProc.on('close', (code) => {
+      console.log(`[Mark-LV Engine] Process closed with code ${code}`);
+      mochiLiveProc = null;
+      if (!isQuitting && activeSettings.geminiApiKey) {
+        clearTimeout(mochiLiveRestartTimer);
+        mochiLiveRestartTimer = setTimeout(() => {
+          startMochiLiveEngine();
+        }, 3000);
+      }
+    });
 
-    const data = await res.json();
-    const reply = data.choices?.[0]?.message?.content || "Groq responded with empty output!";
-    await processAITags(reply);
-    return { text: cleanAITags(reply) };
+    mochiLiveProc.on('error', (err) => {
+      console.error('[Mark-LV Engine] Process error:', err);
+      mochiLiveProc = null;
+    });
+
+  } catch (err) {
+    console.error('[Mark-LV Engine] Failed to spawn runner:', err);
   }
-
-  return { text: "No AI provider configured. Please open Settings." };
 }
 
-async function processAITags(text) {
-  // Check for [LAUNCH: app]
-  const launchMatch = text.match(/\[LAUNCH:\s*([^\]]+)\]/i);
-  if (launchMatch) {
-    const appToLaunch = launchMatch[1].trim();
-    await launchApplication(appToLaunch);
-  }
-
-  // Check for [CLOSE: app]
-  const closeMatch = text.match(/\[CLOSE:\s*([^\]]+)\]/i);
-  if (closeMatch) {
-    const appToClose = closeMatch[1].trim();
-    await closeApplication(appToClose);
-  }
-
-  // Check for [ADD_TASK: ...]
-  const taskMatch = text.match(/\[ADD_TASK:\s*(\{.+?\})\]/i);
-  if (taskMatch) {
+function stopMochiLiveEngine() {
+  if (mochiLiveProc) {
     try {
-      const taskData = JSON.parse(taskMatch[1]);
-      const targetAssignee = taskData.for === "her" ? "her" : "me";
-      const targetTitle = (taskData.title || "New Task").trim();
-
-      // Deduplicate: ignore if same task title & assignee was created within the last 15 seconds
-      const isDuplicate = activeSchedule.some(
-        (t) =>
-          (t.title || "").toLowerCase().trim() === targetTitle.toLowerCase() &&
-          t.assignee === targetAssignee &&
-          Date.now() - (t.createdAt || 0) < 15000
-      );
-
-      if (!isDuplicate) {
-        const newItem = {
-          id: "task-" + Date.now(),
-          title: targetTitle,
-          time: taskData.time || "12:00 PM",
-          assignee: targetAssignee,
-          assignedBy: activeSettings.userRole || "me",
-          completed: false,
-          createdAt: Date.now(),
-        };
-        activeSchedule.push(newItem);
-        saveSchedule(activeSchedule);
-        syncScheduleToPartner();
-        if (overlayWin && !overlayWin.isDestroyed()) {
-          overlayWin.webContents.send("schedule-updated", activeSchedule);
-        }
-      } else {
-        console.log("[Task Deduplication] Prevented duplicate task addition:", targetTitle);
-      }
+      sendToLiveEngine({ cmd: 'interrupt' });
+      mochiLiveProc.kill();
     } catch {}
-  }
-
-  // Check for [SEND_CHAT: ...]
-  const chatMatch = text.match(/\[SEND_CHAT:\s*(\{.+?\})\]/i);
-  if (chatMatch) {
-    try {
-      const chatData = JSON.parse(chatMatch[1]);
-      if (chatData.text) {
-        const history = loadChatHistory();
-        const isMe = (activeSettings.userRole || "me") === "me";
-        const myName = isMe ? (activeSettings.userName || "Badsha") : (activeSettings.partnerName || "Ayzil");
-        const partnerName = isMe ? (activeSettings.partnerName || "Ayzil") : (activeSettings.userName || "Badsha");
-        const newMsg = {
-          id: "msg_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
-          sender: myName,
-          recipient: partnerName,
-          text: chatData.text,
-          timestamp: Date.now(),
-          read: true,
-          isAiGenerated: true,
-        };
-        history.push(newMsg);
-        saveChatHistory(history);
-        broadcastChatMessage(newMsg).catch(() => {});
-        saveChatMessageToCloud(newMsg, activeSettings.shareChannel || "coucou-badsha-ayzil").catch(() => {});
-        if (overlayWin && !overlayWin.isDestroyed()) {
-          overlayWin.webContents.send("partner-chat-received", newMsg);
-        }
-      }
-    } catch (err) {
-      console.warn("AI chat send error:", err);
-    }
-  }
-
-  // Check for [ACTION: ...] from Mark-LV Autonomous Engine
-  const actionMatch = text.match(/\[ACTION:\s*(\{.+?\})\]/i);
-  if (actionMatch) {
-    try {
-      const actData = JSON.parse(actionMatch[1]);
-      if (actData.name) {
-        console.log(`[Mark-LV Engine] Executing autonomous action: ${actData.name}`, actData.parameters);
-        await runMochiBridgeCmd("execute", actData.name, JSON.stringify(actData.parameters || {}));
-      }
-    } catch (err) {
-      console.warn("[Mark-LV Engine] Action parse/execution error:", err);
-    }
+    mochiLiveProc = null;
   }
 }
 
-function cleanAITags(text) {
-  return text
-    .replace(/\[LAUNCH:\s*[^\]]+\]/gi, "")
-    .replace(/\[CLOSE:\s*[^\]]+\]/gi, "")
-    .replace(/\[ADD_TASK:\s*\{.+?\}\]/gi, "")
-    .replace(/\[MARK_DONE:\s*[^\]]+\]/gi, "")
-    .replace(/\[SEND_CHAT:\s*\{.+?\}\]/gi, "")
-    .replace(/\[ACTION:\s*\{.+?\}\]/gi, "")
-    .trim();
+function sendToLiveEngine(cmdObj) {
+  if (!mochiLiveProc || !mochiLiveProc.stdin || mochiLiveProc.stdin.destroyed) {
+    if (activeSettings.geminiApiKey) {
+      startMochiLiveEngine();
+    }
+    return false;
+  }
+  try {
+    mochiLiveProc.stdin.write(JSON.stringify(cmdObj) + '\n');
+    return true;
+  } catch (err) {
+    console.warn('[Mark-LV Engine] Stdin write error:', err);
+    return false;
+  }
+}
+
+function handleLiveEngineEvent(msg) {
+  if (!msg || !msg.event) return;
+
+  switch (msg.event) {
+    case 'state': {
+      const st = String(msg.state || 'listening').toLowerCase();
+      if (overlayWin && !overlayWin.isDestroyed()) {
+        overlayWin.webContents.send('ai-state', st);
+      }
+      break;
+    }
+    case 'transcript': {
+      if (overlayWin && !overlayWin.isDestroyed()) {
+        overlayWin.webContents.send('ai-transcript', {
+          role: msg.role || 'assistant',
+          text: msg.text || '',
+          speaker: msg.speaker || 'Mochi',
+        });
+      }
+      if (msg.role === 'assistant' && pendingTextResolvers.length > 0) {
+        const resolver = pendingTextResolvers.shift();
+        resolver({ text: msg.text });
+      }
+      break;
+    }
+    case 'audio_level': {
+      if (overlayWin && !overlayWin.isDestroyed()) {
+        overlayWin.webContents.send('ai-audio-level', msg.level || 0);
+      }
+      break;
+    }
+    case 'content': {
+      if (overlayWin && !overlayWin.isDestroyed()) {
+        overlayWin.webContents.send('ai-content', { title: msg.title, text: msg.text });
+      }
+      break;
+    }
+    case 'confirm': {
+      if (overlayWin && !overlayWin.isDestroyed()) {
+        overlayWin.webContents.send('ai-confirm', msg);
+      }
+      break;
+    }
+    case 'reconfig': {
+      if (overlayWin && !overlayWin.isDestroyed()) {
+        overlayWin.webContents.send('open-settings-window');
+      }
+      break;
+    }
+  }
 }
 
 // ── IPC Handlers ─────────────────────────────────────────────────────────────
@@ -1939,6 +1584,8 @@ ipcMain.handle("marklv-launch-hud", async () => {
 
 ipcMain.handle("save-settings", (_event, newSettings) => {
   const oldAutostart = activeSettings.autostart;
+  const oldGeminiKey = activeSettings.geminiApiKey;
+  const oldVoice = activeSettings.voiceName;
   activeSettings = { ...activeSettings, ...newSettings };
   cachedMarkLvTools = null;
   saveSettings(activeSettings);
@@ -1946,7 +1593,13 @@ ipcMain.handle("save-settings", (_event, newSettings) => {
     applyStartupMode(activeSettings.autostart);
   }
   startSupabaseSync();
-  syncMarkLvConfig(activeSettings);
+  syncEngineConfig(activeSettings);
+  if (activeSettings.geminiApiKey && (!mochiLiveProc || oldGeminiKey !== activeSettings.geminiApiKey)) {
+    if (mochiLiveProc) stopMochiLiveEngine();
+    startMochiLiveEngine();
+  } else if (oldVoice !== activeSettings.voiceName) {
+    sendToLiveEngine({ cmd: "voice", voice: activeSettings.voiceName });
+  }
   if (overlayWin && !overlayWin.isDestroyed()) {
     overlayWin.webContents.send("settings-changed", activeSettings);
   }
@@ -2278,153 +1931,56 @@ ipcMain.handle("perform-update", async () => {
   }
 });
 
-ipcMain.handle("chat-send", async (_event, { query, context }) => {
-  return await callAI(query, context);
-});
+// ── AI & Chat: Mark-LV Live Engine IPC Handlers ───────────────────────────
 
-ipcMain.handle("chat-reset", () => {
-  return true;
-});
-
-// ── Voice: Groq Whisper Transcription & Kokoro TTS ───────────────────────────
-
-ipcMain.handle("transcribe-audio", async (_event, audioBase64) => {
-  try {
-    const key = activeSettings.groqApiKey || activeSettings.grokApiKey;
-    if (!key) {
-      return { success: false, error: "Please enter your free Groq API key in Settings (⚙️) for voice recognition!" };
-    }
-    const buffer = Buffer.from(audioBase64, "base64");
-    const formData = new FormData();
-    const file = new File([buffer], "audio.wav", { type: "audio/wav" });
-    formData.append("file", file);
-    formData.append("model", "whisper-large-v3");
-    formData.append("language", "en");
-    formData.append("temperature", "0");
-    formData.append(
-      "prompt",
-      "Mochi, open Discord, WhatsApp, OBS, Premiere Pro, Roblox, Valorant, schedule, calendar, Ayzil, Badsha, what is our schedule today, send a message to partner, download file."
-    );
-
-    let res = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${key}`,
-      },
-      body: formData,
-    });
-
-    if (!res.ok) {
-      // Fallback to whisper-large-v3-turbo if whisper-large-v3 is temporarily rate-limited
-      const errText = await res.text();
-      console.warn("[Whisper v3 Error, trying turbo fallback]:", errText);
-
-      const fbForm = new FormData();
-      const fbFile = new File([buffer], "audio.wav", { type: "audio/wav" });
-      fbForm.append("file", fbFile);
-      fbForm.append("model", "whisper-large-v3-turbo");
-      fbForm.append("language", "en");
-      fbForm.append("temperature", "0");
-      fbForm.append("prompt", "Mochi, open Discord, WhatsApp, OBS, Premiere Pro, Roblox, Valorant, schedule");
-
-      res = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${key}` },
-        body: fbForm,
-      });
-
-      if (!res.ok) {
-        const fbErr = await res.text();
-        throw new Error(`Whisper transcription failed: ${fbErr}`);
-      }
-    }
-
-    const data = await res.json();
-    return { success: true, text: data.text ? data.text.trim() : "" };
-  } catch (err) {
-    console.error("Transcribe audio error:", err);
-    return { success: false, error: err.message };
-  }
-});
-
-let kokoroTTSInstance = null;
-async function getKokoro() {
-  if (!kokoroTTSInstance) {
-    const { KokoroTTS } = require("kokoro-js");
-    kokoroTTSInstance = await KokoroTTS.from_pretrained("onnx-community/Kokoro-82M-v1.0-ONNX", { dtype: "q8" });
-  }
-  return kokoroTTSInstance;
-}
-
-function float32ToWav(samples, sampleRate = 24000) {
-  const buffer = new ArrayBuffer(44 + samples.length * 2);
-  const view = new DataView(buffer);
-  function writeString(offset, string) {
-    for (let i = 0; i < string.length; i++) {
-      view.setUint8(offset + i, string.charCodeAt(i));
-    }
-  }
-  writeString(0, "RIFF");
-  view.setUint32(4, 36 + samples.length * 2, true);
-  writeString(8, "WAVE");
-  writeString(12, "fmt ");
-  view.setUint32(16, 16, true);
-  view.setUint16(20, 1, true);
-  view.setUint16(22, 1, true);
-  view.setUint32(24, sampleRate, true);
-  view.setUint32(28, sampleRate * 2, true);
-  view.setUint16(32, 2, true);
-  view.setUint16(34, 16, true);
-  writeString(36, "data");
-  view.setUint32(40, samples.length * 2, true);
-  let offset = 44;
-  for (let i = 0; i < samples.length; i++, offset += 2) {
-    const s = Math.max(-1, Math.min(1, samples[i]));
-    view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
-  }
-  return Buffer.from(buffer);
-}
-
-let activeSpeechProc = null;
-
-ipcMain.handle("speak-native", async (_event, text) => {
-  if (activeSpeechProc) {
-    try { activeSpeechProc.kill(); } catch {}
-    activeSpeechProc = null;
+ipcMain.handle("chat-send", async (_event, { query }) => {
+  if (!query || !query.trim()) return { text: "" };
+  if (!mochiLiveProc) {
+    startMochiLiveEngine();
   }
   return new Promise((resolve) => {
-    try {
-      const scriptPath = path.join(__dirname, "sapi.js");
-      const safeText = String(text || "").replace(/"/g, '""');
-      activeSpeechProc = spawn("cscript", ["//nologo", scriptPath, safeText], {
-        windowsHide: true,
-      });
-      activeSpeechProc.on("close", () => {
-        activeSpeechProc = null;
-        resolve({ success: true });
-      });
-      activeSpeechProc.on("error", (err) => {
-        console.warn("[SAPI] Speech error:", err);
-        activeSpeechProc = null;
-        resolve({ success: false, error: err.message });
-      });
-    } catch (err) {
-      resolve({ success: false, error: err.message });
+    let resolved = false;
+    const safeResolve = (res) => {
+      if (resolved) return;
+      resolved = true;
+      clearTimeout(timer);
+      resolve(res);
+    };
+
+    const timer = setTimeout(() => {
+      const idx = pendingTextResolvers.indexOf(safeResolve);
+      if (idx !== -1) pendingTextResolvers.splice(idx, 1);
+      safeResolve({ text: "(Command sent to Mochi)" });
+    }, 15000);
+
+    pendingTextResolvers.push(safeResolve);
+    const sent = sendToLiveEngine({ cmd: "text", text: query });
+    if (!sent) {
+      const idx = pendingTextResolvers.indexOf(safeResolve);
+      if (idx !== -1) pendingTextResolvers.splice(idx, 1);
+      safeResolve({ text: "Mochi live engine is initializing... Please try again in a moment." });
     }
   });
 });
 
-ipcMain.handle("stop-native-speech", () => {
-  if (activeSpeechProc) {
-    try { activeSpeechProc.kill(); } catch {}
-    activeSpeechProc = null;
-  }
+ipcMain.handle("chat-reset", () => {
+  sendToLiveEngine({ cmd: "interrupt" });
   return true;
 });
 
-ipcMain.handle("kokoro-tts", async (_event, text) => {
-  // Return fallback: true to ensure instant, non-blocking native voice playback
-  return { success: false, error: "Fast native speech preferred" };
+ipcMain.handle("ai-interrupt", () => {
+  sendToLiveEngine({ cmd: "interrupt" });
+  return true;
+});
+
+ipcMain.handle("ai-mute", (_event, muted) => {
+  sendToLiveEngine({ cmd: "mute", muted: !!muted });
+  return true;
+});
+
+ipcMain.handle("ai-set-voice", (_event, voice) => {
+  sendToLiveEngine({ cmd: "voice", voice });
+  return true;
 });
 
 // File Ingestion & Google Drive Upload
@@ -3200,6 +2756,7 @@ app.whenReady().then(() => {
 
   setupTray();
   createOverlayWindow();
+  startMochiLiveEngine();
   startSupabaseSync();
   applyStartupMode(activeSettings.autostart);
 
@@ -3221,6 +2778,12 @@ app.whenReady().then(() => {
       createOverlayWindow();
     }
   });
+});
+
+
+app.on("before-quit", () => {
+  isQuitting = true;
+  stopMochiLiveEngine();
 });
 
 app.on("window-all-closed", () => {

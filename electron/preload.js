@@ -26,13 +26,12 @@ contextBridge.exposeInMainWorld("electronAPI", {
   quit: () => ipcRenderer.invoke("quit"),
   log: (msg) => ipcRenderer.invoke("log", msg),
 
-  // AI & Chat
+  // AI & Chat (Mark-LV Live Engine)
   chatSend: (query, context) => ipcRenderer.invoke("chat-send", { query, context }),
   chatReset: () => ipcRenderer.invoke("chat-reset"),
-  transcribeAudio: (audioBase64) => ipcRenderer.invoke("transcribe-audio", audioBase64),
-  kokoroTTS: (text) => ipcRenderer.invoke("kokoro-tts", text),
-  speakNative: (text) => ipcRenderer.invoke("speak-native", text),
-  stopNativeSpeech: () => ipcRenderer.invoke("stop-native-speech"),
+  aiInterrupt: () => ipcRenderer.invoke("ai-interrupt"),
+  aiMute: (muted) => ipcRenderer.invoke("ai-mute", muted),
+  aiSetVoice: (voice) => ipcRenderer.invoke("ai-set-voice", voice),
 
   // Files & Drive
   ingestFile: (path) => ipcRenderer.invoke("ingest-file", path),
@@ -115,6 +114,11 @@ contextBridge.exposeInMainWorld("electronAPI", {
       "host-signal",
       "update-progress",
       "update-available",
+      "ai-state",
+      "ai-transcript",
+      "ai-audio-level",
+      "ai-content",
+      "ai-confirm",
     ];
     if (validChannels.includes(channel)) {
       const handler = (_event, ...args) => callback(...args);

@@ -21,6 +21,9 @@ declare global {
 
       chatSend(query: string, context: ChatContext | null): Promise<{ text: string }>;
       chatReset(): Promise<boolean>;
+      aiInterrupt?(): Promise<boolean>;
+      aiMute?(muted: boolean): Promise<boolean>;
+      aiSetVoice?(voice: string): Promise<boolean>;
       transcribeAudio(audioBase64: string): Promise<{ success: boolean; text?: string; error?: string }>;
       kokoroTTS(text: string): Promise<{ success: boolean; base64?: string; error?: string }>;
       speakNative?(text: string): Promise<{ success: boolean; error?: string }>;
@@ -244,6 +247,21 @@ export const Bridge = {
 
   chatReset: async (): Promise<void> => {
     if (window.electronAPI) await window.electronAPI.chatReset();
+  },
+
+  aiInterrupt: async (): Promise<boolean> => {
+    if (window.electronAPI?.aiInterrupt) return await window.electronAPI.aiInterrupt();
+    return true;
+  },
+
+  aiMute: async (muted: boolean): Promise<boolean> => {
+    if (window.electronAPI?.aiMute) return await window.electronAPI.aiMute(muted);
+    return true;
+  },
+
+  aiSetVoice: async (voice: string): Promise<boolean> => {
+    if (window.electronAPI?.aiSetVoice) return await window.electronAPI.aiSetVoice(voice);
+    return true;
   },
 
   transcribeAudio: async (audioBase64: string): Promise<{ success: boolean; text?: string; error?: string }> => {
