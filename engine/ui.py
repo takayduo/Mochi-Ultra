@@ -5757,6 +5757,9 @@ class JarvisUI:
     def write_log(self, text: str):
         self._win._log_sig.emit(text)
 
+    def emit(self, event: str, data: dict = None):
+        pass
+
     def wait_for_api_key(self):
         while not self._win._ready:
             time.sleep(0.1)

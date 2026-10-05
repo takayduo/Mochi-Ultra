@@ -33,52 +33,201 @@ function statusDot(ok: boolean): HTMLElement {
 
 function aiSection(): HTMLElement {
   const body = h("div", { style: "display:flex;flex-direction:column;gap:12px" });
+  const sectionTitle = h("span", { text: "AI Engine & Speech Provider" });
+  const statusIndicator = statusDot(true);
   const section = h(
     "section",
     {},
-    h("h2", {}, statusDot(true), h("span", { text: "Google Gemini Live AI Engine" })),
+    h("h2", {}, statusIndicator, sectionTitle),
     body
   );
 
   function draw() {
     clear(body);
 
-    body.append(
-      h("div", {
-        class: "hint",
-        text: "Mochi Ultra is powered directly by Google Gemini Live and Mark-LV's autonomous agent architecture. Enter your Google Gemini API key to activate real-time human conversational speech, vision, and full autonomous PC control.",
-      })
-    );
+    const activeProvider = settings.aiProvider || "gemini";
+    statusIndicator.style.background =
+      (activeProvider === "gemini" ? !!settings.geminiApiKey : !!settings.groqApiKey)
+        ? "#22c55e"
+        : "#f4505e";
 
-    // Gemini API Key Input
-    const geminiInput = h("input", {
-      type: "password",
-      placeholder: settings.geminiApiKey ? "•••••••••••• (saved)" : "AIzaSy... or AQ....",
-      value: "",
-    }) as HTMLInputElement;
-    const geminiSave = h("button", { class: "primary", text: "Save" });
-    const geminiStatus = statusDot(!!settings.geminiApiKey);
+    // Provider Tabs (Gemini Live vs Groq AI)
+    const geminiTab = h("button", {
+      class: activeProvider === "gemini" ? "primary" : "",
+      style: "flex:1;padding:8px 12px;font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:6px;",
+      text: "⚡ Gemini Live (Default)",
+    });
 
-    geminiSave.addEventListener("click", async () => {
-      const val = geminiInput.value.trim();
-      if (val) {
-        settings.geminiApiKey = val;
-        geminiInput.value = "";
-        geminiInput.placeholder = "•••••••••••• (saved)";
-        geminiStatus.style.background = "#22c55e";
-        await save();
-      }
+    const groqTab = h("button", {
+      class: activeProvider === "groq" ? "primary" : "",
+      style: "flex:1;padding:8px 12px;font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:6px;",
+      text: "🚀 Groq AI (Secondary / Fallback)",
+    });
+
+    geminiTab.addEventListener("click", async () => {
+      settings.aiProvider = "gemini";
+      await save();
+      draw();
+    });
+
+    groqTab.addEventListener("click", async () => {
+      settings.aiProvider = "groq";
+      await save();
+      draw();
     });
 
     body.append(
-      h("div", { class: "group-title", text: "Gemini Live API Key" }),
-      h("div", { class: "row" }, h("label", { text: "API Key" }), geminiInput, geminiSave, geminiStatus),
-      h("div", {
-        class: "hint",
-        style: "margin-top:-4px;font-size:11.5px;",
-        text: "Get your free API key at aistudio.google.com. No model selection needed — Mochi Ultra automatically uses Gemini Live preview models for sub-300ms bidirectional speech and 17 autonomous tools.",
-      })
+      h("div", { style: "display:flex;gap:8px;margin-bottom:4px;" }, geminiTab, groqTab)
     );
+
+    if (activeProvider === "gemini") {
+      sectionTitle.textContent = "Google Gemini Live AI Engine";
+
+      body.append(
+        h("div", {
+          class: "hint",
+          text: "Mochi Ultra is powered directly by Google Gemini Live with Mark-LV autonomous tools. Features sub-300ms bidirectional natural speech, vision, and full PC control.",
+        })
+      );
+
+      // Gemini API Key Input
+      const geminiInput = h("input", {
+        type: "password",
+        placeholder: settings.geminiApiKey ? "•••••••••••• (saved)" : "AIzaSy... or AQ....",
+        value: "",
+      }) as HTMLInputElement;
+      const geminiSave = h("button", { class: "primary", text: "Save" });
+      const geminiStatus = statusDot(!!settings.geminiApiKey);
+
+      geminiSave.addEventListener("click", async () => {
+        const val = geminiInput.value.trim();
+        if (val) {
+          settings.geminiApiKey = val;
+          geminiInput.value = "";
+          geminiInput.placeholder = "•••••••••••• (saved)";
+          geminiStatus.style.background = "#22c55e";
+          await save();
+          draw();
+        }
+      });
+
+      // Gemini Voice Selector
+      const voiceSelect = h("select", {
+        style: "flex:1;padding:6px 10px;border-radius:8px;background:rgba(255,255,255,0.06);color:#fff;border:1px solid rgba(255,255,255,0.12);",
+      }) as HTMLSelectElement;
+      const VOICES = [
+        { id: "Kore", label: "Kore (Warm & Natural Female)" },
+        { id: "Charon", label: "Charon (Calm Male Voice)" },
+        { id: "Puck", label: "Puck (Playful & Energetic)" },
+        { id: "Fenrir", label: "Fenrir (Deep & Authoritative)" },
+        { id: "Aoede", label: "Aoede (Soft & Expressive)" },
+      ];
+      for (const v of VOICES) {
+        const opt = h("option", { value: v.id, text: v.label }) as HTMLOptionElement;
+        if ((settings.voiceName || "Kore") === v.id) opt.selected = true;
+        voiceSelect.append(opt);
+      }
+      voiceSelect.addEventListener("change", async () => {
+        settings.voiceName = voiceSelect.value;
+        await save();
+      });
+
+      body.append(
+        h("div", { class: "group-title", text: "Gemini Live API Key" }),
+        h("div", { class: "row" }, h("label", { text: "API Key" }), geminiInput, geminiSave, geminiStatus),
+        h("div", {
+          class: "hint",
+          style: "margin-top:-4px;font-size:11.5px;",
+          text: "Get your free API key at aistudio.google.com. No model selection needed — automatically uses Gemini Live preview for real-time speech and 17 autonomous tools.",
+        }),
+        h("div", { class: "row", style: "margin-top:6px;" }, h("label", { text: "Voice Model" }), voiceSelect)
+      );
+    } else {
+      sectionTitle.textContent = "Groq Secondary AI Engine (with Local TTS)";
+
+      body.append(
+        h("div", {
+          class: "hint",
+          text: "Secondary fast AI engine powered by Groq LPUs and local SpeechSynthesis TTS. Use this whenever Gemini credits run out, or when you want free, instant token responses and local cute voices.",
+        })
+      );
+
+      // Groq API Key Input
+      const groqInput = h("input", {
+        type: "password",
+        placeholder: settings.groqApiKey ? "•••••••••••• (saved)" : "gsk_...",
+        value: "",
+      }) as HTMLInputElement;
+      const groqSave = h("button", { class: "primary", text: "Save" });
+      const groqStatus = statusDot(!!settings.groqApiKey);
+
+      groqSave.addEventListener("click", async () => {
+        const val = groqInput.value.trim();
+        if (val) {
+          settings.groqApiKey = val;
+          groqInput.value = "";
+          groqInput.placeholder = "•••••••••••• (saved)";
+          groqStatus.style.background = "#22c55e";
+          await save();
+          draw();
+        }
+      });
+
+      // Groq Model Dropdown
+      const modelSelect = h("select", {
+        style: "flex:1;padding:6px 10px;border-radius:8px;background:rgba(255,255,255,0.06);color:#fff;border:1px solid rgba(255,255,255,0.12);",
+      }) as HTMLSelectElement;
+
+      const GROQ_MODELS = [
+        { id: "llama-3.3-70b-versatile", label: "Meta LLaMA 3.3 70B (Recommended — Fast & Smart)" },
+        { id: "llama-3.1-8b-instant", label: "Meta LLaMA 3.1 8B (Ultra Fast)" },
+        { id: "mixtral-8x7b-32768", label: "Mixtral 8x7B (32k Context)" },
+        { id: "gemma2-9b-it", label: "Google Gemma 2 9B" },
+        { id: "qwen-2.5-32b", label: "Qwen 2.5 32B" },
+      ];
+
+      for (const m of GROQ_MODELS) {
+        const opt = h("option", { value: m.id, text: m.label }) as HTMLOptionElement;
+        if ((settings.groqModel || "llama-3.3-70b-versatile") === m.id) opt.selected = true;
+        modelSelect.append(opt);
+      }
+
+      modelSelect.addEventListener("change", async () => {
+        settings.groqModel = modelSelect.value;
+        await save();
+      });
+
+      // Test Local TTS Button
+      const testVoiceBtn = h("button", { text: "🔊 Test Local Voice" });
+      testVoiceBtn.addEventListener("click", () => {
+        if ("speechSynthesis" in window) {
+          window.speechSynthesis.cancel();
+          const u = new SpeechSynthesisUtterance("Hi! Groq mode is active, and I can speak with you using local TTS!");
+          u.pitch = 1.12;
+          u.rate = 1.02;
+          window.speechSynthesis.speak(u);
+        }
+      });
+
+      body.append(
+        h("div", { class: "group-title", text: "Groq API Key" }),
+        h("div", { class: "row" }, h("label", { text: "Groq Key" }), groqInput, groqSave, groqStatus),
+        h("div", {
+          class: "hint",
+          style: "margin-top:-4px;font-size:11.5px;",
+          text: "Get your free Groq API key at console.groq.com. Instant token generation with 0 cost.",
+        }),
+        h("div", { class: "group-title", style: "margin-top:8px;", text: "Groq Model Selection" }),
+        h("div", { class: "row" }, h("label", { text: "Model" }), modelSelect),
+        h("div", { class: "group-title", style: "margin-top:8px;", text: "Voice & Speech (Local TTS)" }),
+        h("div", { class: "row" }, h("label", { text: "Local Audio" }), testVoiceBtn),
+        h("div", {
+          class: "hint",
+          style: "margin-top:-4px;font-size:11.5px;",
+          text: "In Groq mode, Mochi uses Groq Whisper for speech recognition and local speech synthesis with the previous cute voice.",
+        })
+      );
+    }
   }
 
   draw();

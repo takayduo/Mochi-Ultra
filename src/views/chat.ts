@@ -6,6 +6,7 @@ import { ICONS } from "./icons";
 import { Bridge, type ChatContext } from "../core/bridge";
 import { Sound } from "../core/sound";
 import { State, type ChatMessage } from "../core/state";
+import { VoiceManager } from "../core/voice";
 import type { ViewHost } from "./views";
 
 let nextId = 1;
@@ -126,6 +127,9 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
         const lastMsg = State.chatHistory[State.chatHistory.length - 1];
         if (!lastMsg || lastMsg.content !== reply.text) {
           State.chatHistory.push({ id: nextId++, role: "assistant", content: reply.text });
+        }
+        if ((State.settings.aiProvider || "gemini") === "groq") {
+          void VoiceManager.speak(reply.text);
         }
       }
       State.stateOverride = null;

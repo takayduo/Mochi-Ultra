@@ -26,9 +26,10 @@ contextBridge.exposeInMainWorld("electronAPI", {
   quit: () => ipcRenderer.invoke("quit"),
   log: (msg) => ipcRenderer.invoke("log", msg),
 
-  // AI & Chat (Mark-LV Live Engine)
+  // AI & Chat (Mark-LV Live Engine & Groq)
   chatSend: (query, context) => ipcRenderer.invoke("chat-send", { query, context }),
   chatReset: () => ipcRenderer.invoke("chat-reset"),
+  transcribeAudio: (audioBase64) => ipcRenderer.invoke("transcribe-audio", audioBase64),
   aiInterrupt: () => ipcRenderer.invoke("ai-interrupt"),
   aiMute: (muted) => ipcRenderer.invoke("ai-mute", muted),
   aiSetVoice: (voice) => ipcRenderer.invoke("ai-set-voice", voice),

@@ -107,6 +107,10 @@ class MochiHeadlessUI:
     def current_file(self, value: str | None):
         self._current_file = value
 
+    def emit(self, event: str, data: dict = None):
+        """Emit arbitrary IPC event to Electron."""
+        emit_ipc(event, data or {})
+
     def set_state(self, state: str):
         """Called by JarvisLive when assistant state changes (LISTENING, THINKING, SPEAKING, SLEEPING)."""
         emit_ipc("state", {"state": state})

@@ -1377,6 +1377,11 @@ function syncEngineConfig(settings) {
 
 function startMochiLiveEngine() {
   if (mochiLiveProc) return;
+  const provider = activeSettings.aiProvider || "gemini";
+  if (provider !== "gemini") {
+    console.log(`[Mark-LV Engine] Current AI provider is '${provider}'. Gemini Live process will not be spawned.`);
+    return;
+  }
   if (!activeSettings.geminiApiKey && !process.env.GEMINI_API_KEY) {
     console.log('[Mark-LV Engine] Gemini API key not set yet. Waiting for key in Settings...');
     return;
@@ -1428,7 +1433,7 @@ function startMochiLiveEngine() {
     mochiLiveProc.on('close', (code) => {
       console.log(`[Mark-LV Engine] Process closed with code ${code}`);
       mochiLiveProc = null;
-      if (!isQuitting && activeSettings.geminiApiKey) {
+      if (!isQuitting && (activeSettings.aiProvider || 'gemini') === 'gemini' && activeSettings.geminiApiKey) {
         clearTimeout(mochiLiveRestartTimer);
         mochiLiveRestartTimer = setTimeout(() => {
           startMochiLiveEngine();
@@ -1521,6 +1526,63 @@ function handleLiveEngineEvent(msg) {
       }
       break;
     }
+    case 'partner_chat_send': {
+      const myName = activeSettings.userName || "Badsha";
+      const partnerName = activeSettings.partnerName || "Ayzil";
+      const userRole = activeSettings.userRole || "me";
+      const newMsg = {
+        id: msg.id || ("msg_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7)),
+        sender: msg.sender || myName,
+        recipient: msg.recipient || partnerName,
+        senderRole: msg.senderRole || userRole,
+        text: msg.text || "",
+        timestamp: Date.now(),
+        read: true,
+        isAiGenerated: true,
+      };
+      const history = loadChatHistory();
+      if (!history.some((m) => m.id === newMsg.id)) {
+        history.push(newMsg);
+        saveChatHistory(history);
+      }
+      try {
+        broadcastChatMessage(newMsg);
+      } catch (err) {
+        console.warn("[LiveEngine Broadcast Error]:", err);
+      }
+      if (overlayWin && !overlayWin.isDestroyed()) {
+        overlayWin.webContents.send("partner-chat-received", newMsg);
+      }
+      break;
+    }
+    case 'schedule_add': {
+      if (msg.item) {
+        const existingIndex = activeSchedule.findIndex((s) => s.id === msg.item.id);
+        if (existingIndex >= 0) activeSchedule[existingIndex] = msg.item;
+        else activeSchedule.push(msg.item);
+        saveSchedule(activeSchedule);
+        syncScheduleToPartner();
+        if (overlayWin && !overlayWin.isDestroyed()) {
+          overlayWin.webContents.send("schedule-updated", activeSchedule);
+        }
+      }
+      break;
+    }
+    case 'schedule_toggle': {
+      const item = activeSchedule.find(
+        (s) => s.id === msg.id || (msg.title && s.title.toLowerCase().includes(msg.title.toLowerCase()))
+      );
+      if (item) {
+        item.completed = true;
+        item.completedAt = Date.now();
+        saveSchedule(activeSchedule);
+        syncScheduleToPartner();
+        if (overlayWin && !overlayWin.isDestroyed()) {
+          overlayWin.webContents.send("schedule-updated", activeSchedule);
+        }
+      }
+      break;
+    }
   }
 }
 
@@ -1585,7 +1647,7 @@ ipcMain.handle("marklv-launch-hud", async () => {
 ipcMain.handle("save-settings", (_event, newSettings) => {
   const oldAutostart = activeSettings.autostart;
   const oldGeminiKey = activeSettings.geminiApiKey;
-  const oldVoice = activeSettings.voiceName;
+  const oldProvider = activeSettings.aiProvider || "gemini";
   activeSettings = { ...activeSettings, ...newSettings };
   cachedMarkLvTools = null;
   saveSettings(activeSettings);
@@ -1594,12 +1656,23 @@ ipcMain.handle("save-settings", (_event, newSettings) => {
   }
   startSupabaseSync();
   syncEngineConfig(activeSettings);
-  if (activeSettings.geminiApiKey && (!mochiLiveProc || oldGeminiKey !== activeSettings.geminiApiKey)) {
-    if (mochiLiveProc) stopMochiLiveEngine();
-    startMochiLiveEngine();
-  } else if (oldVoice !== activeSettings.voiceName) {
-    sendToLiveEngine({ cmd: "voice", voice: activeSettings.voiceName });
+
+  const currentProvider = activeSettings.aiProvider || "gemini";
+  if (currentProvider === "gemini") {
+    if (oldProvider !== "gemini" || !mochiLiveProc || oldGeminiKey !== activeSettings.geminiApiKey) {
+      if (mochiLiveProc) stopMochiLiveEngine();
+      startMochiLiveEngine();
+    } else if (oldVoice !== activeSettings.voiceName) {
+      sendToLiveEngine({ cmd: "voice", voice: activeSettings.voiceName });
+    }
+  } else {
+    // Switched to groq or fallback provider
+    if (mochiLiveProc) {
+      console.log(`[Settings] Switched to '${currentProvider}'. Stopping Gemini Live engine.`);
+      stopMochiLiveEngine();
+    }
   }
+
   if (overlayWin && !overlayWin.isDestroyed()) {
     overlayWin.webContents.send("settings-changed", activeSettings);
   }
@@ -1931,10 +2004,191 @@ ipcMain.handle("perform-update", async () => {
   }
 });
 
-// ── AI & Chat: Mark-LV Live Engine IPC Handlers ───────────────────────────
+// ── Groq Secondary AI Engine ────────────────────────────────────────────────
+async function callGroqAI(query, context) {
+  const userRole = activeSettings.userRole || "me";
+  const partnerRole = userRole === "me" ? "her" : "me";
+  const currentUserName = userRole === "me" ? (activeSettings.userName || "Badsha") : (activeSettings.partnerName || "Ayzil");
+  const partnerUserName = userRole === "me" ? (activeSettings.partnerName || "Ayzil") : (activeSettings.userName || "Badsha");
 
-ipcMain.handle("chat-send", async (_event, { query }) => {
+  // Load latest schedule items
+  const myTasks = activeSchedule.filter((s) => s.assignee === userRole || s.assignee === "both");
+  const partnerTasks = activeSchedule.filter((s) => s.assignee === partnerRole || s.assignee === "both");
+
+  const myTasksText = myTasks.length > 0
+    ? myTasks.map((s) => `  [${s.completed ? "DONE" : "PENDING"}] ${s.time ? s.time + " - " : ""}${s.title}${s.assignedBy === partnerRole ? ` (set by ${partnerUserName})` : ""}`).join("\n")
+    : "No tasks scheduled for today.";
+
+  const partnerTasksText = partnerTasks.length > 0
+    ? partnerTasks.map((s) => `  [${s.completed ? "DONE" : "PENDING"}] ${s.time ? s.time + " - " : ""}${s.title}${s.assignedBy === userRole ? ` (set by ${currentUserName})` : ""}`).join("\n")
+    : "No tasks scheduled for today.";
+
+  const systemPrompt = `You are Mochi, a warm, super cute, energetic, and snappy AI desktop companion for YouTube creator couple ${currentUserName} and ${partnerUserName}.
+CURRENT ACTIVE USER ON THIS PC: ${currentUserName}
+THEIR PARTNER: ${partnerUserName}
+
+--- ${currentUserName.toUpperCase()}'S TASKS ---
+${myTasksText}
+
+--- ${partnerUserName.toUpperCase()}'S TASKS ---
+${partnerTasksText}
+
+Configured Apps: ${Object.keys(activeSettings.appPaths || {}).join(", ")}
+
+CRITICAL IDENTITY & TASK OWNERSHIP RULES:
+1. You are speaking directly to ${currentUserName}.
+2. When ${currentUserName} asks about "my task", "my tasks", "my schedule", "what do I have to do": ONLY list ${currentUserName}'s tasks.
+3. Only if ${currentUserName} specifically asks about ${partnerUserName}: tell them about ${partnerUserName}'s tasks.
+4. Keep answers short, sweet, and assistant-friendly (maximum 1-2 short sentences!).
+5. Do NOT use markdown symbols (no **, ##, *, backticks) or bullet spam so spoken voice sounds natural.
+6. If asked to open/launch an app: Say e.g. "Opening Discord right now!" and append [LAUNCH: app_name].
+7. If asked to close/exit an app: Say e.g. "Closing Discord for you!" and append [CLOSE: app_name].
+8. If asked to add a task for ${currentUserName}: Confirm and append [ADD_TASK: {"title":"...","time":"...","for":"${userRole}"}].
+9. If asked to add a task for ${partnerUserName}: Confirm and append [ADD_TASK: {"title":"...","time":"...","for":"${partnerRole}"}].
+10. If asked to add a task for both: Confirm and append [ADD_TASK: {"title":"...","time":"...","for":"both"}].
+11. If asked to mark done: Confirm in one line and append [MARK_DONE: task_id_or_title].
+12. If asked to send/text a message to ${partnerUserName}: Confirm in a sweet sentence and append [SEND_CHAT: {"text":"..."}].
+Be sweet, playful, and helpful!`;
+
+  const key = activeSettings.groqApiKey || activeSettings.grokApiKey;
+  if (!key) {
+    return { text: "Please enter your free Groq API Key (gsk_...) in Settings to chat with me!" };
+  }
+  const model = activeSettings.groqModel || "llama-3.3-70b-versatile";
+
+  try {
+    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${key}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: query },
+        ],
+        temperature: 0.7,
+        max_tokens: 350,
+      }),
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`Groq API error (${res.status}): ${errText}`);
+    }
+
+    const data = await res.json();
+    let rawReply = (data.choices?.[0]?.message?.content || "").trim();
+
+    // Execute [SEND_CHAT: ...]
+    const chatMatch = /\[SEND_CHAT:\s*({[^}]+})\]/i.exec(rawReply);
+    if (chatMatch) {
+      try {
+        const parsed = JSON.parse(chatMatch[1]);
+        if (parsed.text) {
+          const history = loadChatHistory();
+          const newMsg = {
+            id: "msg_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
+            sender: currentUserName,
+            recipient: partnerUserName,
+            senderRole: userRole,
+            text: parsed.text,
+            timestamp: Date.now(),
+            read: true,
+            isAiGenerated: true,
+          };
+          history.push(newMsg);
+          saveChatHistory(history);
+          try { broadcastChatMessage(newMsg); } catch {}
+          if (overlayWin && !overlayWin.isDestroyed()) {
+            overlayWin.webContents.send("partner-chat-received", newMsg);
+          }
+        }
+      } catch (e) {
+        console.warn("Parse SEND_CHAT error:", e);
+      }
+    }
+
+    // Execute [ADD_TASK: ...]
+    const taskMatch = /\[ADD_TASK:\s*({[^}]+})\]/i.exec(rawReply);
+    if (taskMatch) {
+      try {
+        const parsed = JSON.parse(taskMatch[1]);
+        if (parsed.title) {
+          const forRole = (parsed.for || userRole).toLowerCase();
+          const assignee = forRole.includes("her") || forRole.includes("partner") ? partnerRole : (forRole.includes("both") ? "both" : userRole);
+          const newItem = {
+            id: "task_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6),
+            title: parsed.title,
+            time: parsed.time || "",
+            assignee: assignee,
+            assignedBy: userRole,
+            completed: false,
+            createdAt: Date.now(),
+          };
+          activeSchedule.push(newItem);
+          saveSchedule(activeSchedule);
+          syncScheduleToPartner();
+          if (overlayWin && !overlayWin.isDestroyed()) {
+            overlayWin.webContents.send("schedule-updated", activeSchedule);
+          }
+        }
+      } catch (e) {
+        console.warn("Parse ADD_TASK error:", e);
+      }
+    }
+
+    // Execute [MARK_DONE: ...]
+    const doneMatch = /\[MARK_DONE:\s*([^\]]+)\]/i.exec(rawReply);
+    if (doneMatch) {
+      const queryDone = doneMatch[1].trim().toLowerCase();
+      const item = activeSchedule.find((s) => s.id === queryDone || s.title.toLowerCase().includes(queryDone));
+      if (item) {
+        item.completed = true;
+        item.completedAt = Date.now();
+        saveSchedule(activeSchedule);
+        syncScheduleToPartner();
+        if (overlayWin && !overlayWin.isDestroyed()) {
+          overlayWin.webContents.send("schedule-updated", activeSchedule);
+        }
+      }
+    }
+
+    // Execute [LAUNCH: ...]
+    const launchMatch = /\[LAUNCH:\s*([^\]]+)\]/i.exec(rawReply);
+    if (launchMatch) {
+      const target = launchMatch[1].trim();
+      void launchApplication(target);
+    }
+
+    // Execute [CLOSE: ...]
+    const closeMatch = /\[CLOSE:\s*([^\]]+)\]/i.exec(rawReply);
+    if (closeMatch) {
+      const target = closeMatch[1].trim();
+      void closeApplication(target);
+    }
+
+    const cleanReply = rawReply.replace(/\[[A-Z_]+:[^\]]*\]/gi, "").trim();
+    return { text: cleanReply || rawReply };
+  } catch (err) {
+    console.error("[Groq AI Error]:", err);
+    return { text: `Groq error: ${err.message}` };
+  }
+}
+
+// ── AI & Chat: Engine IPC Handlers (Gemini Live & Groq) ───────────────────
+
+ipcMain.handle("chat-send", async (_event, { query, context }) => {
   if (!query || !query.trim()) return { text: "" };
+
+  const provider = activeSettings.aiProvider || "gemini";
+  if (provider === "groq") {
+    return await callGroqAI(query, context);
+  }
+
+  // Gemini Live Engine
   if (!mochiLiveProc) {
     startMochiLiveEngine();
   }
@@ -1964,8 +2218,62 @@ ipcMain.handle("chat-send", async (_event, { query }) => {
 });
 
 ipcMain.handle("chat-reset", () => {
-  sendToLiveEngine({ cmd: "interrupt" });
+  if ((activeSettings.aiProvider || "gemini") === "gemini") {
+    sendToLiveEngine({ cmd: "interrupt" });
+  }
   return true;
+});
+
+ipcMain.handle("transcribe-audio", async (_event, audioBase64) => {
+  try {
+    const key = activeSettings.groqApiKey || activeSettings.grokApiKey;
+    if (!key) {
+      return { success: false, error: "Please enter your free Groq API key in Settings for voice recognition!" };
+    }
+    const buffer = Buffer.from(audioBase64, "base64");
+    const formData = new FormData();
+    const file = new File([buffer], "audio.wav", { type: "audio/wav" });
+    formData.append("file", file);
+    formData.append("model", "whisper-large-v3");
+    formData.append("language", "en");
+    formData.append("temperature", "0");
+    formData.append(
+      "prompt",
+      "Mochi, open Discord, WhatsApp, OBS, Premiere Pro, schedule, calendar, Ayzil, Badsha, what is our schedule today, send a message to partner."
+    );
+
+    let res = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}` },
+      body: formData,
+    });
+
+    if (!res.ok) {
+      const fbForm = new FormData();
+      const fbFile = new File([buffer], "audio.wav", { type: "audio/wav" });
+      fbForm.append("file", fbFile);
+      fbForm.append("model", "whisper-large-v3-turbo");
+      fbForm.append("language", "en");
+      fbForm.append("temperature", "0");
+
+      res = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${key}` },
+        body: fbForm,
+      });
+
+      if (!res.ok) {
+        const fbErr = await res.text();
+        throw new Error(`Whisper transcription failed: ${fbErr}`);
+      }
+    }
+
+    const data = await res.json();
+    return { success: true, text: data.text ? data.text.trim() : "" };
+  } catch (err) {
+    console.error("Transcribe audio error:", err);
+    return { success: false, error: err.message };
+  }
 });
 
 ipcMain.handle("ai-interrupt", () => {
