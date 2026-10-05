@@ -1,0 +1,53 @@
+# Dependencies
+node_modules/
+package-lock.json
+
+# Production build output
+dist/
+
+# Local reference upstream repository
+coucou_ref/
+
+# Logs
+*.log
+electron_log.txt
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Operating System files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE & Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment variables & local secrets
+.env
+.env.local
+.env.*.local
+*.local
+
+# Google Cloud & service account credentials
+client_secret*.json
+credentials*.json
+service_account*.json
+
+# User temporary data
+userData/
+scratch/
+
+# Python cache & local engine config
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+venv/
+.venv/
+engine/config/api_keys.json
+engine/memory/long_term.json
+engine/memory/sessions.json

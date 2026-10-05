@@ -1,0 +1,6 @@
+{
+  "version": "1.0.0",
+  "commit": "62fc88bc4a07c2ba6298ead256e383959887a2cd",
+  "commitDate": "2026-10-05T00:35:56+05:30",
+  "commitMessage": "perf(remote): ultra-low latency mouse tracking, rAF position conflation, and motion video encoding"
+}
