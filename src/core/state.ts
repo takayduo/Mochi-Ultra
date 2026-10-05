@@ -111,6 +111,7 @@ export interface Settings {
   gdriveUploadUrl: string;
   shareChannel: string;
   syncUrl: string;
+  syncApiKey?: string;
   notifyPartnerOnline?: boolean;
   appPaths: Record<string, string>;
 

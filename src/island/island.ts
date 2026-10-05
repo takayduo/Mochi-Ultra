@@ -601,14 +601,6 @@ export class Island {
       Sound.resume();
       State.lastActivity = performance.now();
 
-      // If Mochi is speaking or thinking, ANY click immediately interrupts him and resumes listening
-      if (VoiceManager.isBusy() || VoiceManager.isSpeaking() || State.stateOverride === "finished" || State.stateOverride === "thinking") {
-        VoiceManager.stopSpeech();
-        State.stateOverride = null;
-        State.triggerEmote("surprised");
-        State.notify();
-      }
-
       if (this.fsm.state === "coucou" || State.view === "greeting") {
         this.greeting.interrupt();
         this.fsm.forceHome();
@@ -616,11 +608,23 @@ export class Island {
         return;
       }
       if (State.mode !== "expanded") {
+        if (VoiceManager.isBusy() || VoiceManager.isSpeaking() || State.stateOverride === "finished" || State.stateOverride === "thinking") {
+          VoiceManager.stopSpeech();
+          State.stateOverride = null;
+          State.triggerEmote("surprised");
+          State.notify();
+        }
         this.fsm.click();
         return;
       }
       if (this.isBotHit(e.clientX, e.clientY)) {
         this.cancelBotHover();
+        if (VoiceManager.isBusy() || VoiceManager.isSpeaking() || State.stateOverride === "finished" || State.stateOverride === "thinking") {
+          VoiceManager.stopSpeech();
+          State.stateOverride = null;
+          State.triggerEmote("surprised");
+          State.notify();
+        }
         this.engine.slap();
       }
     });
@@ -960,7 +964,7 @@ export class Island {
       const isInputFocused =
         document.activeElement &&
         (document.activeElement.tagName === "INPUT" || document.activeElement.tagName === "TEXTAREA");
-      if (!this.wasInIsland && !State.isPinned && !isInputFocused && State.view !== "partner-file" && State.mode === "expanded") {
+      if (!this.wasInIsland && !State.isPinned && !isInputFocused && State.mode === "expanded") {
         this.collapse();
       }
       return;

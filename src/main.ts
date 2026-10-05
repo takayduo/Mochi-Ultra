@@ -143,7 +143,7 @@ async function main() {
 
   await onEvent<{ name: string; size: string; sender: string; path: string }>("file-received", (info) => {
     Sound.play("greet");
-    State.stateOverride = "happy";
+    State.triggerEmote("happy");
     State.noteMessage = `${info.sender} sent ${info.name} (${info.size})!`;
     island.expand("note");
     State.notify();

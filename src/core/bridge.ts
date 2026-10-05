@@ -27,6 +27,7 @@ declare global {
       transcribeAudio(audioBase64: string): Promise<{ success: boolean; text?: string; error?: string }>;
       kokoroTTS(text: string): Promise<{ success: boolean; base64?: string; error?: string }>;
       speakNative?(text: string): Promise<{ success: boolean; error?: string }>;
+      stopNativeSpeech?(): Promise<boolean>;
       ingestFile(fileData: string | DroppedFileInput): Promise<DroppedFile>;
       downloadDriveFile?(fileInfo: any): Promise<{ success: boolean; localPath?: string; error?: string }>;
       openPath?(path: string): Promise<boolean>;
@@ -60,13 +61,7 @@ declare global {
       injectInput?(cmd: string): Promise<boolean>;
       injectInputFast?(cmd: string): void;
 
-      checkForUpdates?(): Promise<{
-        success: boolean;
-        updateAvailable?: boolean;
-        local: { version: string; commit: string; commitShort: string; commitMessage: string; commitDate: string };
-        remote?: { commit: string; commitShort: string; message: string; date: string };
-        error?: string;
-      }>;
+      checkForUpdates?(): Promise<UpdateCheckResult>;
       performUpdate?(): Promise<{ success: boolean; error?: string }>;
 
       // Mark-LV PC Control Engine & Hardware Bridge
@@ -147,6 +142,25 @@ export interface HookPreview {
   backup: string;
   settingsPath: string;
   fingerprint: string;
+}
+
+export interface IntegrationUpdate {
+  id: string;
+  data: Record<string, any>;
+  error: string | null;
+  event?: {
+    success: boolean;
+    label: string;
+    detail?: string;
+  };
+}
+
+export interface UpdateCheckResult {
+  success: boolean;
+  updateAvailable?: boolean;
+  local?: { version: string; commit: string; commitShort: string; commitMessage: string; commitDate: string };
+  remote?: { commit: string; commitShort: string; message: string; date: string };
+  error?: string;
 }
 
 export const Bridge = {
@@ -435,7 +449,7 @@ export const Bridge = {
   },
 
   // ── GitHub 1-Click Auto-Updater ──────────────────────────────────────────
-  checkForUpdates: async () => {
+  checkForUpdates: async (): Promise<UpdateCheckResult> => {
     if (window.electronAPI?.checkForUpdates) return await window.electronAPI.checkForUpdates();
     return { success: false, error: "Auto-updater only available in desktop app" };
   },
