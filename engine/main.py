@@ -892,7 +892,11 @@ class JarvisLive:
             if self._ptt is not None:
                 self._ptt.stop()
                 self._ptt = None
+            self.ui.muted = False
             return "off"
+
+        # PTT enabled: mute mic until key is held
+        self.ui.muted = True
 
         if self._ptt is None:
             self._ptt = PushToTalk(self._on_ptt, chord=target_chord)
@@ -920,6 +924,7 @@ class JarvisLive:
         except Exception:
             pass
         if held:
+            self.ui.muted = False  # holding the button opens / unmutes the mic!
             if getattr(self, "_speaking", False):
                 self.interrupt()
             # Holding the key is also a way to wake it, so push-to-talk works
@@ -927,6 +932,8 @@ class JarvisLive:
             if self._wake_enabled and not self._awake:
                 self._awake = True
                 self._last_user_speech = time.monotonic()
+        else:
+            self.ui.muted = True  # unholding mutes the mic!
         try:
             self.ui.set_state("LISTENING" if held else ("LISTENING" if not self._wake_enabled else "SLEEPING"))
         except Exception:
@@ -1384,18 +1391,27 @@ class JarvisLive:
             # When it is on the microphone is closed by default and the chord
             # opens it, which is the whole point: nothing leaves the machine
             # unless you are holding the key.
-            if self._ptt_enabled and not self._ptt_held:
+            if self._ptt_enabled:
+                if not self._ptt_held:
+                    return
+                if not self._phone_active:
+                    data = indata.tobytes()
+                    loop.call_soon_threadsafe(
+                        self.out_queue.put_nowait,
+                        {"data": data, "mime_type": "audio/pcm"}
+                    )
+                    try:
+                        self.ui.set_audio_level(_pcm_level(indata))
+                    except Exception:
+                        pass
                 return
-            
+
             if not self.ui.muted and not self._phone_active:
                 data = indata.tobytes()
                 loop.call_soon_threadsafe(
                     self.out_queue.put_nowait,
                     {"data": data, "mime_type": "audio/pcm"}
                 )
-                # Feed the live mic level to the HUD so the waveform reacts to
-                # the user's actual voice while listening. Purely cosmetic — any
-                # failure here must never disturb the mic.
                 try:
                     self.ui.set_audio_level(_pcm_level(indata))
                 except Exception:

@@ -106,24 +106,38 @@ async function testSupabaseConnection({ url, key }) {
 /**
  * Checks whether the cloud persistent tables (mochi_messages & mochi_tasks) exist in Supabase.
  */
-async function checkCloudStorageReady() {
-  if (!supabaseClient) {
-    return { ready: false, error: "Supabase not initialized yet" };
+async function checkCloudStorageReady(creds) {
+  let client = supabaseClient;
+  const url = (creds?.url || currentConfig?.url || "").trim().replace(/\/+$/, "");
+  const key = (creds?.key || currentConfig?.key || "").trim();
+  if (!client && url && key) {
+    try {
+      client = createClient(url, key, { auth: { persistSession: false } });
+    } catch (e) {
+      console.warn("[Supabase] Failed to instantiate client:", e);
+    }
+  }
+  if (!client) {
+    return { ready: false, error: "Supabase not connected yet. Click 'Save & Connect' first." };
   }
 
   try {
-    const { error: msgErr } = await supabaseClient.from("mochi_messages").select("id").limit(1);
+    const { error: msgErr } = await client.from("mochi_messages").select("id").limit(1);
     if (msgErr) {
-      return { ready: false, error: msgErr.message, code: msgErr.code };
+      console.warn("[Supabase Cloud DB Check] mochi_messages error:", msgErr);
+      return { ready: false, error: `mochi_messages: ${msgErr.message}`, code: msgErr.code };
     }
 
-    const { error: taskErr } = await supabaseClient.from("mochi_tasks").select("id").limit(1);
+    const { error: taskErr } = await client.from("mochi_tasks").select("id").limit(1);
     if (taskErr) {
-      return { ready: false, error: taskErr.message, code: taskErr.code };
+      console.warn("[Supabase Cloud DB Check] mochi_tasks error:", taskErr);
+      return { ready: false, error: `mochi_tasks: ${taskErr.message}`, code: taskErr.code };
     }
 
+    console.log("[Supabase Cloud DB Check] Cloud tables mochi_messages and mochi_tasks verified active!");
     return { ready: true };
   } catch (err) {
+    console.warn("[Supabase Cloud DB Check] Exception:", err);
     return { ready: false, error: err.message };
   }
 }

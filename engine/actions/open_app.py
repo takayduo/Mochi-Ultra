@@ -248,6 +248,31 @@ def open_app(
     if not app_name:
         return "No application name provided."
 
+    # 1. Check configured Application Paths in settings
+    try:
+        from actions.close_app import _get_configured_app_paths
+        configured_paths = _get_configured_app_paths()
+        for k, v in configured_paths.items():
+            k_low = k.lower().strip()
+            app_low = app_name.lower().strip()
+            if k_low == app_low or k_low in app_low or app_low in k_low:
+                if v:
+                    clean_v = str(v).strip().replace('"', '')
+                    print(f"[open_app] Launching from Application Paths: '{k}' -> '{clean_v}'")
+                    if player:
+                        player.write_log(f"[open_app] {k}")
+                    if clean_v.startswith("explorer.exe"):
+                        subprocess.Popen(f"start {v}", shell=True)
+                        return f"Opened {k} from your configured Application Paths."
+                    try:
+                        subprocess.Popen(f'start "" "{clean_v}"' if " " in clean_v else f'start {clean_v}', shell=True)
+                        return f"Opened {k} from your configured Application Paths."
+                    except Exception:
+                        subprocess.Popen(str(v), shell=True)
+                        return f"Opened {k} from your configured Application Paths."
+    except Exception as e:
+        print(f"[open_app] Note checking configured paths: {e}")
+
     launcher = _OS_LAUNCHERS.get(_SYSTEM)
     if launcher is None:
         return f"Unsupported operating system: {_SYSTEM}"

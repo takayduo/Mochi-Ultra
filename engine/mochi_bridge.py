@@ -218,6 +218,17 @@ def main():
         elif first == "list-memory":
             print(json.dumps(cmd_list_memory()))
             return
+        elif first == "save-memory":
+            cat = sys.argv[2] if len(sys.argv) > 2 else "notes"
+            k = sys.argv[3] if len(sys.argv) > 3 else ""
+            v = sys.argv[4] if len(sys.argv) > 4 else ""
+            print(json.dumps(cmd_save_memory(cat, k, v)))
+            return
+        elif first == "delete-memory":
+            cat = sys.argv[2] if len(sys.argv) > 2 else "notes"
+            k = sys.argv[3] if len(sys.argv) > 3 else ""
+            print(json.dumps(cmd_delete_memory(cat, k)))
+            return
         elif first == "execute":
             # mochi_bridge.py execute <name> '<json_params>'
             name = sys.argv[2] if len(sys.argv) > 2 else ""

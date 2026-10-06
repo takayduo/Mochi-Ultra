@@ -245,6 +245,20 @@ def brightness_down():
             print(f"[Settings] Brightness down failed on Windows: {e}")
 
 def close_app():
+    if _OS == "Windows":
+        try:
+            import ctypes, ctypes.wintypes, psutil
+            user32 = ctypes.windll.user32
+            hwnd = user32.GetForegroundWindow()
+            pid = ctypes.wintypes.DWORD()
+            user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+            if pid.value:
+                proc_name = psutil.Process(pid.value).name().lower()
+                if any(k in proc_name for k in ("mochi", "coucou", "electron", "python", "code", "cursor")):
+                    print(f"[Settings] Suppressed Alt+F4 on protected window ({proc_name})")
+                    return
+        except Exception:
+            pass
     if _OS == "Darwin": pyautogui.hotkey("command", "q")
     else:               pyautogui.hotkey("alt", "f4")
 
@@ -870,6 +884,16 @@ def computer_settings(
         scroll_down(int(value or 500))
         return "Scrolled down."
 
+    if action == "close_app":
+        target = (value or "").strip()
+        if not target and description:
+            clean_desc = re.sub(r"^(close|quit|exit|kill|stop)\s+", "", description.strip(), flags=re.IGNORECASE)
+            if clean_desc and clean_desc.lower() not in ("app", "window", "program", "the app"):
+                target = clean_desc
+        if target:
+            from actions.close_app import close_app as do_close_app
+            return do_close_app(parameters={"app_name": target})
+
     func = ACTION_MAP.get(action)
     if not func:
         return _suggest(raw_action or description)
@@ -911,7 +935,7 @@ def computer_settings(
 # ── Tool declaration (auto-discovered by core/action_loader.py) ──────────────
 TOOL = {
     "name": "computer_settings",
-    "description": "Controls the computer: volume, brightness, window management, keyboard shortcuts, typing text on screen, closing apps, fullscreen, dark mode, WiFi, restart, shutdown, scrolling, tab management, zoom, screenshots, lock screen, refresh/reload page. Use for ANY single computer control command. restart, shutdown and toggle_wifi put a confirmation on the user's screen and do NOT happen until they press it — never claim they are done. Volume, brightness and dark mode can be reversed with the `undo` tool.",
+    "description": "Controls the computer: volume, brightness, window management, keyboard shortcuts, typing text on screen, fullscreen, dark mode, WiFi, restart, shutdown, scrolling, tab management, zoom, screenshots, lock screen, refresh/reload page. Use for computer settings and general window actions. (NOTE: To close, quit, or terminate a specific application or game like Valorant, Discord, WhatsApp, OBS, etc., ALWAYS call the 'close_app' tool instead).",
     "parameters": {
         "type": "OBJECT",
         "properties": {

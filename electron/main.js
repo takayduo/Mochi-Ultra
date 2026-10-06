@@ -143,6 +143,7 @@ const DEFAULT_SETTINGS = {
     computer_control: true,
     browser_control: true,
     open_app: true,
+    close_app: true,
     desktop_control: true,
     computer_settings: true,
     file_controller: true,
@@ -1154,6 +1155,29 @@ function getProcessCandidates(appNameOrPath) {
   }
 
   // 2. Built-in known process mappings for common Windows apps
+  if (query.includes("valorant")) {
+    candidates.add("VALORANT.exe");
+    candidates.add("VALORANT-Win64-Shipping.exe");
+    candidates.add("RiotClientServices.exe");
+    candidates.add("RiotClientCrashHandler.exe");
+  }
+  if (query.includes("riot")) {
+    candidates.add("RiotClientServices.exe");
+    candidates.add("RiotClientCrashHandler.exe");
+  }
+  if (query.includes("league") || query === "lol") {
+    candidates.add("LeagueClient.exe");
+    candidates.add("League of Legends.exe");
+    candidates.add("LeagueClientUx.exe");
+  }
+  if (query.includes("csgo") || query.includes("cs2") || query.includes("counter-strike")) {
+    candidates.add("cs2.exe");
+    candidates.add("csgo.exe");
+  }
+  if (query.includes("gta")) {
+    candidates.add("GTA5.exe");
+    candidates.add("PlayGTAV.exe");
+  }
   if (query.includes("notepad")) {
     candidates.add("Notepad.exe");
     candidates.add("notepad.exe");
@@ -1294,6 +1318,30 @@ function launchApplication(appNameOrPath) {
 }
 
 function closeApplication(appNameOrPath) {
+  const cleanLower = (appNameOrPath || "").toLowerCase().trim();
+  if (!cleanLower) {
+    return Promise.resolve({ success: false, error: "No application name provided." });
+  }
+
+  // Strict safety protection: NEVER close Mochi or Coucou or Dev tools
+  if (
+    cleanLower.includes("mochi") ||
+    cleanLower.includes("coucou") ||
+    cleanLower === "ultra" ||
+    cleanLower === "electron" ||
+    cleanLower === "python" ||
+    cleanLower === "code" ||
+    cleanLower === "cursor" ||
+    cleanLower === "antigravity" ||
+    cleanLower === "jarvis"
+  ) {
+    console.warn(`[App Closer] Refusing to close protected assistant process: ${appNameOrPath}`);
+    return Promise.resolve({
+      success: false,
+      error: "Refusing to close Mochi assistant process.",
+    });
+  }
+
   const candidates = getProcessCandidates(appNameOrPath);
   console.log(`[App Closer] Closing ${appNameOrPath}, checking candidates:`, candidates);
 
@@ -1317,9 +1365,10 @@ function closeApplication(appNameOrPath) {
           if (closedAny) {
             resolve({ success: true, app: appNameOrPath });
           } else {
-            // PowerShell wildcard fallback for modern Windows Store apps or exact names
+            // PowerShell wildcard fallback with strict exclusion of Mochi, Electron, Python, Code
             const queryName = appNameOrPath.replace(/\.exe$/i, "").trim();
-            exec(`powershell -NoProfile -Command "Stop-Process -Name '*${queryName}*' -Force -ErrorAction Stop"`, (psErr) => {
+            const safePsCmd = `Get-Process | Where-Object { ($_.ProcessName -like '*${queryName}*' -or $_.MainWindowTitle -like '*${queryName}*') -and $_.ProcessName -notmatch 'mochi|coucou|electron|python|code|explorer|system' } | Stop-Process -Force -ErrorAction Stop`;
+            exec(`powershell -NoProfile -Command "${safePsCmd}"`, (psErr) => {
               if (!psErr) {
                 console.log(`[App Closer] Terminated via PowerShell: *${queryName}*`);
                 resolve({ success: true, app: appNameOrPath });
@@ -1368,7 +1417,13 @@ function syncEngineConfig(settings) {
         prefix_ms: settings.turnPrefixMs || 150,
         end_sensitivity: settings.turnEndSensitivity || 'high',
       },
-      plugins_enabled: settings.activeActions || currentConfig.plugins_enabled || {},
+      app_paths: settings.appPaths || currentConfig.app_paths || {},
+      plugins_enabled: {
+        ...(currentConfig.plugins_enabled || {}),
+        close_app: true,
+        open_app: true,
+        ...(settings.activeActions || {}),
+      },
     };
     fs.mkdirSync(path.dirname(configPath), { recursive: true });
     fs.writeFileSync(configPath, JSON.stringify(updatedConfig, null, 4), 'utf-8');
@@ -1706,14 +1761,27 @@ ipcMain.handle("save-settings", (_event, newSettings) => {
 });
 
 ipcMain.handle("test-supabase", async (_event, creds) => {
-  return await testSupabaseConnection(creds || {
+  const targetCreds = creds || {
+    url: activeSettings.syncUrl,
+    key: activeSettings.syncApiKey,
+  };
+  const result = await testSupabaseConnection(targetCreds);
+  if (result && result.success && targetCreds.url && targetCreds.key) {
+    if (activeSettings.syncUrl !== targetCreds.url || activeSettings.syncApiKey !== targetCreds.key) {
+      activeSettings.syncUrl = targetCreds.url;
+      activeSettings.syncApiKey = targetCreds.key;
+      saveSettings(activeSettings);
+      startSupabaseSync();
+    }
+  }
+  return result;
+});
+
+ipcMain.handle("check-supabase-cloud-status", async (_event, creds) => {
+  return await checkCloudStorageReady(creds || {
     url: activeSettings.syncUrl,
     key: activeSettings.syncApiKey,
   });
-});
-
-ipcMain.handle("check-supabase-cloud-status", async () => {
-  return await checkCloudStorageReady();
 });
 
 ipcMain.handle("get-supabase-sql-setup", () => {

@@ -249,6 +249,7 @@ function markLvSection(): HTMLElement {
     { key: "computer_control", label: "Computer Control", desc: "Mouse clicking, typing, hotkeys, scroll, drag, vision screen finding", emoji: "🖱️" },
     { key: "browser_control", label: "Browser Control", desc: "Playwright autonomous browser navigation, clicks, typing, form fills", emoji: "🌐" },
     { key: "open_app", label: "Open App", desc: "Universal desktop app launcher & Windows executable runner", emoji: "🚀" },
+    { key: "close_app", label: "Close App", desc: "Safe targeted application & game closer (Application Paths + process lookup)", emoji: "🛑" },
     { key: "desktop_control", label: "Desktop Control", desc: "Window manager (minimize, maximize, snap left/right, show desktop, clean)", emoji: "🪟" },
     { key: "computer_settings", label: "Computer Settings", desc: "Volume, brightness, mute, dark mode, task manager, sleep display", emoji: "⚙️" },
     { key: "file_controller", label: "File Controller", desc: "File search, creation, reading, copying, moving, deleting", emoji: "📁" },
@@ -914,7 +915,9 @@ function supabaseSection(): HTMLElement {
 
   async function updateCloudStatus() {
     try {
-      const res = await Bridge.checkSupabaseCloudStatus();
+      const url = urlInput.value.trim() || settings.syncUrl;
+      const key = keyInput.value.trim() || settings.syncApiKey;
+      const res = await Bridge.checkSupabaseCloudStatus({ url, key });
       if (res && res.ready) {
         offlineStatusDot.style.background = "#22c55e";
         offlineStatusTitle.textContent = "🟢 24/7 Cloud Mailbox Active (Never Miss a Message)";
@@ -925,7 +928,8 @@ function supabaseSection(): HTMLElement {
         copySqlBtn.style.display = "none";
       } else {
         offlineStatusDot.style.background = "#f5a524";
-        offlineStatusTitle.textContent = "🟡 Realtime & Peer Sync Active (24/7 Cloud Tables Not Set Up Yet)";
+        const errHint = res?.error ? ` (${res.error})` : " (24/7 Cloud Tables Not Set Up Yet)";
+        offlineStatusTitle.textContent = `🟡 Realtime & Peer Sync Active${errHint}`;
         offlineStatusTitle.style.color = "#f5a524";
         offlineDesc.textContent =
           "Live chat works while both PCs are on. To receive messages and tasks sent while your computer is completely shut down, copy the 1-click SQL setup script below and run it once in your Supabase SQL Editor.";

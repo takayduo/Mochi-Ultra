@@ -207,6 +207,7 @@ export const DEFAULT_SETTINGS: Settings = {
     computer_control: true,
     browser_control: true,
     open_app: true,
+    close_app: true,
     desktop_control: true,
     computer_settings: true,
     file_controller: true,

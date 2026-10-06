@@ -66,10 +66,8 @@ _QT_NAME = {
     "insert": "Ins", "tab": "Tab", "pause": "Pause",
 }
 
-_POLL_HZ = 30.0
-# A key has to be down this long before we call it speech. It stops a stray
-# brush of the chord from opening the microphone.
-_DEBOUNCE_S = 0.06
+_POLL_HZ = 50.0
+_DEBOUNCE_S = 0.02
 
 
 def parse_chord(chord_val=DEFAULT_CHORD) -> tuple[str, ...]:
@@ -198,15 +196,7 @@ class PushToTalk:
                 down = all(user32.GetAsyncKeyState(c) & 0x8000 for c in codes)
             except Exception:
                 break     # driver or session teardown — fall back to windowed
-            now = time.monotonic()
-            if down:
-                if down_since == 0.0:
-                    down_since = now
-                elif now - down_since >= _DEBOUNCE_S:
-                    self._set_held(True)
-            else:
-                down_since = 0.0
-                self._set_held(False)
+            self._set_held(bool(down))
             self._stop.wait(period)
 
         self._set_held(False)
