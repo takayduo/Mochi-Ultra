@@ -129,7 +129,6 @@ class VoiceService {
   private currentAudioLevel = 0;
   private _engineState = "listening";
   private _localSpeaking = false;
-  private isPttHeld = false;
 
   // Web Audio VAD for Groq Whisper Mode
   private isListening = false;
@@ -198,28 +197,6 @@ class VoiceService {
         Sound.play("finish");
       }
 
-      State.notify();
-    });
-
-    // Listen for Push-To-Talk global key state
-    Bridge.on("ai-ptt-state", (held: boolean) => {
-      this.isPttHeld = !!held;
-      if (this.isPttHeld) {
-        if (this._localSpeaking) {
-          this.stopSpeech();
-        }
-        State.stateOverride = null;
-      } else {
-        if ((State.settings.aiProvider || "gemini") === "groq" && State.settings.pushToTalkEnabled) {
-          if (this.speakingFrames >= this.MIN_SPEECH_FRAMES) {
-            void this.handleSpeechComplete();
-          } else {
-            this.audioChunks = [];
-            this.silenceFrames = 0;
-            this.speakingFrames = 0;
-          }
-        }
-      }
       State.notify();
     });
 
@@ -315,15 +292,6 @@ class VoiceService {
         const rms = Math.sqrt(sum / inputData.length);
         this.currentAudioLevel = Math.min(1, rms * 4);
         if (this.onGeometryUpdate) this.onGeometryUpdate();
-
-        if (State.settings.pushToTalkEnabled && !this.isPttHeld) {
-          this.ambientNoiseRms = this.ambientNoiseRms * 0.95 + rms * 0.05;
-          this.preRollBuffer.push(new Float32Array(inputData));
-          if (this.preRollBuffer.length > this.PRE_ROLL_LIMIT) {
-            this.preRollBuffer.shift();
-          }
-          return;
-        }
 
         const dynamicThreshold = Math.max(0.026, this.ambientNoiseRms * 2.4);
 

@@ -42,56 +42,30 @@ DEFAULT_CHORD = ("ctrl", "space")
 
 # Windows virtual-key codes for the names we accept.
 _VK = {
-    "ctrl": 0x11, "control": 0x11, "lctrl": 0xA2, "rctrl": 0xA3,
-    "shift": 0x10, "lshift": 0xA0, "rshift": 0xA1,
-    "alt": 0x12, "lalt": 0xA4, "ralt": 0xA5,
-    "space": 0x20, "spacebar": 0x20,
-    "capslock": 0x14, "caps": 0x14,
-    "tilde": 0xC0, "`": 0xC0, "grave": 0xC0, "backquote": 0xC0,
-    "f1": 0x70, "f2": 0x71, "f3": 0x72, "f4": 0x73, "f5": 0x74, "f6": 0x75,
-    "f7": 0x76, "f8": 0x77, "f9": 0x78, "f10": 0x79, "f11": 0x7A, "f12": 0x7B,
-    "insert": 0x2D, "tab": 0x09, "pause": 0x13,
+    "ctrl": 0x11, "shift": 0x10, "alt": 0x12,
+    "space": 0x20, "f8": 0x77, "f9": 0x78, "f10": 0x79,
+    "capslock": 0x14, "insert": 0x2D,
 }
 
 # Qt key sequence text for the same chord, used by the windowed fallback.
-_QT_NAME = {
-    "ctrl": "Ctrl", "control": "Ctrl", "lctrl": "Left Ctrl", "rctrl": "Right Ctrl",
-    "shift": "Shift", "lshift": "Left Shift", "rshift": "Right Shift",
-    "alt": "Alt", "lalt": "Left Alt", "ralt": "Right Alt",
-    "space": "Space", "spacebar": "Space",
-    "capslock": "CapsLock", "caps": "CapsLock",
-    "tilde": "~", "`": "`", "grave": "`", "backquote": "`",
-    "f1": "F1", "f2": "F2", "f3": "F3", "f4": "F4", "f5": "F5", "f6": "F6",
-    "f7": "F7", "f8": "F8", "f9": "F9", "f10": "F10", "f11": "F11", "f12": "F12",
-    "insert": "Ins", "tab": "Tab", "pause": "Pause",
-}
+_QT_NAME = {"ctrl": "Ctrl", "shift": "Shift", "alt": "Alt", "space": "Space",
+            "f8": "F8", "f9": "F9", "f10": "F10",
+            "capslock": "CapsLock", "insert": "Ins"}
 
-_POLL_HZ = 50.0
-_DEBOUNCE_S = 0.02
-
-
-def parse_chord(chord_val=DEFAULT_CHORD) -> tuple[str, ...]:
-    """Parse chord input from string, list, or tuple into canonical key tuple."""
-    if isinstance(chord_val, (tuple, list)):
-        parts = [str(k).strip().lower() for k in chord_val if str(k).strip()]
-        return tuple(parts) if parts else DEFAULT_CHORD
-    if isinstance(chord_val, str):
-        cleaned = chord_val.replace("+", " ").replace("-", " ")
-        parts = [p.strip().lower() for p in cleaned.split() if p.strip()]
-        return tuple(parts) if parts else DEFAULT_CHORD
-    return DEFAULT_CHORD
+_POLL_HZ = 30.0
+# A key has to be down this long before we call it speech. It stops a stray
+# brush of the chord from opening the microphone.
+_DEBOUNCE_S = 0.06
 
 
 def chord_label(chord=DEFAULT_CHORD) -> str:
     """Human-readable name of the chord, for the UI and the logs."""
-    parsed = parse_chord(chord)
-    return "+".join(_QT_NAME.get(k, k.upper() if len(k) <= 3 else k.title()) for k in parsed)
+    return "+".join(_QT_NAME.get(k, k.title()) for k in chord)
 
 
 def qt_sequence(chord=DEFAULT_CHORD) -> str:
     """The same chord as a QKeySequence string."""
-    parsed = parse_chord(chord)
-    return "+".join(_QT_NAME.get(k, k.upper() if len(k) <= 3 else k.title()) for k in parsed)
+    return "+".join(_QT_NAME.get(k, k.title()) for k in chord)
 
 
 class PushToTalk:
@@ -103,20 +77,11 @@ class PushToTalk:
 
     def __init__(self, on_change: Callable[[bool], None], chord=DEFAULT_CHORD):
         self._on_change = on_change
-        self._chord = parse_chord(chord)
+        self._chord = tuple(chord)
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
         self._held = False
         self._scope = "window"
-
-    def set_chord(self, chord) -> None:
-        """Dynamically update chord and restart watcher if running."""
-        new_chord = parse_chord(chord)
-        if new_chord != self._chord:
-            was_running = self._thread is not None and self._thread.is_alive()
-            self._chord = new_chord
-            if was_running:
-                self.start()
 
     # ── state ───────────────────────────────────────────────────────────────
 
@@ -167,7 +132,7 @@ class PushToTalk:
         try:
             import ctypes
             ctypes.windll.user32.GetAsyncKeyState  # noqa: B018 — presence check
-            return len(self._chord) > 0 and all(k in _VK for k in self._chord)
+            return all(k in _VK for k in self._chord)
         except Exception:
             return False
 
@@ -183,10 +148,7 @@ class PushToTalk:
     def _poll_loop(self) -> None:
         import ctypes
         user32 = ctypes.windll.user32
-        codes = [_VK[k] for k in self._chord if k in _VK]
-        if not codes:
-            self._scope = "window"
-            return
+        codes = [_VK[k] for k in self._chord]
         period = 1.0 / _POLL_HZ
         down_since = 0.0
 
@@ -196,7 +158,15 @@ class PushToTalk:
                 down = all(user32.GetAsyncKeyState(c) & 0x8000 for c in codes)
             except Exception:
                 break     # driver or session teardown — fall back to windowed
-            self._set_held(bool(down))
+            now = time.monotonic()
+            if down:
+                if down_since == 0.0:
+                    down_since = now
+                elif now - down_since >= _DEBOUNCE_S:
+                    self._set_held(True)
+            else:
+                down_since = 0.0
+                self._set_held(False)
             self._stop.wait(period)
 
         self._set_held(False)

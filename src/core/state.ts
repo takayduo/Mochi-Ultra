@@ -120,7 +120,6 @@ export interface Settings {
   voiceName?: string;
   wakeWordEnabled?: boolean;
   pushToTalkEnabled?: boolean;
-  pushToTalkChord?: string;
   proactiveAudio?: boolean;
   thinkingEnabled?: boolean;
   mediaResolution?: "default" | "low" | "medium" | "high";
@@ -192,7 +191,6 @@ export const DEFAULT_SETTINGS: Settings = {
   voiceName: "Charon",
   wakeWordEnabled: false,
   pushToTalkEnabled: false,
-  pushToTalkChord: "ctrl+space",
   proactiveAudio: true,
   thinkingEnabled: false,
   mediaResolution: "medium",
