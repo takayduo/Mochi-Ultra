@@ -178,6 +178,12 @@ class MochiHeadlessUI:
         pass
 
     def show_video(self, source: str, title: str = "", muted: bool = True, audio_source: str = ""):
+        if source and (source.startswith("http://") or source.startswith("https://")):
+            try:
+                import webbrowser
+                webbrowser.open(source)
+            except Exception as e:
+                sys.stderr.write(f"[mochi_runner] show_video open error: {e}\n")
         emit_ipc("video", {"source": source, "title": title, "muted": muted, "audio_source": audio_source})
 
     def start_camera_stream(self):

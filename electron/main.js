@@ -1526,6 +1526,13 @@ function handleLiveEngineEvent(msg) {
       }
       break;
     }
+    case 'video': {
+      if (msg.source) {
+        console.log('[LiveEngine] Video playback event received, opening in browser:', msg.title || msg.source);
+        shell.openExternal(msg.source);
+      }
+      break;
+    }
     case 'partner_chat_send': {
       const myName = activeSettings.userName || "Badsha";
       const partnerName = activeSettings.partnerName || "Ayzil";

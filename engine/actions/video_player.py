@@ -228,39 +228,32 @@ def video_player(parameters: dict = None, response=None, player=None,
 
 
 def _play_youtube(player, source: str, token: int) -> None:
-    """The part that takes seconds. Speaks only if something goes wrong —
-    silence means the video is on screen, which the user can see for
-    themselves."""
-    try:
-        url, audio_url, title, err = _resolve_youtube(source)
-    except Exception as e:                                  # noqa: BLE001
-        url = audio_url = title = ""
-        err = str(e)
-
-    if not _still_wanted(token):
-        return                       # the user closed it while it was resolving
-
-    if url:
-        try:
-            player.show_video(url, title or source, muted=True,
-                              audio_source=audio_url)
-            return
-        except Exception as e:                              # noqa: BLE001
-            err = str(e)
-
-    # Resolution failed. Opening it in a browser is worse than playing it in the
-    # HUD, but it is a great deal better than doing nothing, and the reason is
-    # reported rather than swallowed.
+    """Opens the requested YouTube video in the default browser cleanly and quickly."""
     page = source if _YT.search(source) else _search_page(source)
-    opened = ""
     try:
-        webbrowser.open(page)
-        opened = " and it has been opened in the browser instead"
+        from actions.youtube_video import _scrape_first_video_url
+        first_url = _scrape_first_video_url(source)
+        if first_url:
+            page = first_url
     except Exception:
         pass
-    _say(player, "Tell the user, in one short sentence in their own language: "
-                 f"'{source}' could not be played on the display "
-                 f"({err}){opened}.")
+
+    if not _still_wanted(token):
+        return
+
+    # Open the video page directly in the default browser with audio!
+    try:
+        webbrowser.open(page)
+        print(f"[video_player] ▶️ Opened in browser: {page}")
+    except Exception as e:
+        print(f"[video_player] webbrowser.open error: {e}")
+
+    # Forward event to player/UI
+    if player and hasattr(player, "show_video"):
+        try:
+            player.show_video(page, source, muted=False)
+        except Exception:
+            pass
 
 
 def _say(player, instruction: str) -> None:
@@ -275,23 +268,10 @@ def _say(player, instruction: str) -> None:
 TOOL = {
     "name": "video_player",
     "description": (
-        "If user wants to open a video on YouTube, he will tell you that specifically"
-        "If user wants to play a video, then he wants to call this feature"
-        "Plays a VIDEO on the assistant's own display, where the avatar "
-        "normally is — and stops it, mutes it or unmutes it. Use whenever the "
-        "user wants to WATCH something on screen: 'play the new Dune trailer', "
-        "'şu videoyu oynat', 'play C:/clips/holiday.mp4', 'put that YouTube "
-        "video on the screen', 'stop the video', 'videoyu kapat', 'turn the "
-        "sound on', 'sesi aç', 'mute it'. Accepts a local file path, a direct "
-        "video URL, a YouTube link, or a description to search YouTube for. "
-        "Video always starts MUTED — only call action='unmute' when the user "
-        "actually asks to hear it. "
-        "This returns the moment it is asked, before the picture appears: when "
-        "it answers 'status=opening', say in one short sentence that you are "
-        "putting it on the display, and do not wait or call it again. "
-        "Do NOT use 'youtube_video' for this: that optional plugin opens videos "
-        "in the web browser and summarises transcripts, it never plays anything "
-        "on the assistant's display."
+        "Plays a video or music on screen or in the browser. "
+        "Use whenever the user wants to watch a video, play music, or open YouTube: "
+        "'play MrBeast', 'play trending songs', 'play that video', 'play a good song', 'gaana chalao'. "
+        "Accepts a search query, video title, artist, YouTube link, or local file path."
     ),
     "parameters": {
         "type": "OBJECT",
