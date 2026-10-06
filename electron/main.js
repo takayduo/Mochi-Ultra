@@ -2048,6 +2048,10 @@ CRITICAL IDENTITY & TASK OWNERSHIP RULES:
 10. If asked to add a task for both: Confirm and append [ADD_TASK: {"title":"...","time":"...","for":"both"}].
 11. If asked to mark done: Confirm in one line and append [MARK_DONE: task_id_or_title].
 12. If asked to send/text a message to ${partnerUserName}: Confirm in a sweet sentence and append [SEND_CHAT: {"text":"..."}].
+13. If asked to play a YouTube video, music, song, or artist (e.g. "play MrBeast", "play trending songs", "gaana chalao", "video play karo", "koi badhiya song play karo"): Say e.g. "Playing that for you right now!" and append [PLAY_YOUTUBE: search_or_song_query]. NEVER say you played it without appending [PLAY_YOUTUBE: query]!
+14. If asked to search Google or the web (e.g. "search...", "who is...", "what is the score of...", "google..."): Say e.g. "Searching that for you!" and append [WEB_SEARCH: search_query].
+15. If asked to open a website or URL: Say e.g. "Opening that website right now!" and append [BROWSER_OPEN: website_url].
+16. If asked to adjust volume, mute, or media controls: Say e.g. "Got it!" and append [MEDIA_CONTROL: command_or_volume].
 Be sweet, playful, and helpful!`;
 
   const key = activeSettings.groqApiKey || activeSettings.grokApiKey;
@@ -2170,6 +2174,45 @@ Be sweet, playful, and helpful!`;
       void closeApplication(target);
     }
 
+    // Execute [PLAY_YOUTUBE: ...]
+    const ytMatch = /\[PLAY_YOUTUBE:\s*([^\]]+)\]/i.exec(rawReply);
+    if (ytMatch) {
+      const ytQuery = ytMatch[1].trim();
+      console.log(`[Groq Action] Playing YouTube for query: "${ytQuery}"`);
+      void runMochiBridgeCmd("execute", "youtube_video", JSON.stringify({ action: "play", query: ytQuery })).catch((err) => {
+        console.warn("[Groq Action] Bridge youtube_video fallback to shell:", err);
+        shell.openExternal(`https://www.youtube.com/results?search_query=${encodeURIComponent(ytQuery)}`);
+      });
+    }
+
+    // Execute [WEB_SEARCH: ...]
+    const searchMatch = /\[WEB_SEARCH:\s*([^\]]+)\]/i.exec(rawReply);
+    if (searchMatch) {
+      const sQuery = searchMatch[1].trim();
+      console.log(`[Groq Action] Searching web for: "${sQuery}"`);
+      void runMochiBridgeCmd("execute", "web_search", JSON.stringify({ query: sQuery, mode: "search" })).catch((err) => {
+        console.warn("[Groq Action] Bridge web_search fallback to shell:", err);
+        shell.openExternal(`https://www.google.com/search?q=${encodeURIComponent(sQuery)}`);
+      });
+    }
+
+    // Execute [BROWSER_OPEN: ...]
+    const browserMatch = /\[BROWSER_OPEN:\s*([^\]]+)\]/i.exec(rawReply);
+    if (browserMatch) {
+      let bUrl = browserMatch[1].trim();
+      if (!/^https?:\/\//i.test(bUrl)) bUrl = "https://" + bUrl;
+      console.log(`[Groq Action] Opening browser URL: "${bUrl}"`);
+      shell.openExternal(bUrl);
+    }
+
+    // Execute [MEDIA_CONTROL: ...]
+    const mediaMatch = /\[MEDIA_CONTROL:\s*([^\]]+)\]/i.exec(rawReply);
+    if (mediaMatch) {
+      const mCmd = mediaMatch[1].trim();
+      console.log(`[Groq Action] Media/setting command: "${mCmd}"`);
+      void runMochiBridgeCmd("execute", "computer_settings", JSON.stringify({ description: mCmd }));
+    }
+
     const cleanReply = rawReply.replace(/\[[A-Z_]+:[^\]]*\]/gi, "").trim();
     return { text: cleanReply || rawReply };
   } catch (err) {
@@ -2235,11 +2278,10 @@ ipcMain.handle("transcribe-audio", async (_event, audioBase64) => {
     const file = new File([buffer], "audio.wav", { type: "audio/wav" });
     formData.append("file", file);
     formData.append("model", "whisper-large-v3");
-    formData.append("language", "en");
     formData.append("temperature", "0");
     formData.append(
       "prompt",
-      "Mochi, open Discord, WhatsApp, OBS, Premiere Pro, schedule, calendar, Ayzil, Badsha, what is our schedule today, send a message to partner."
+      "Mochi, play songs, open YouTube, MrBeast, play video, Discord, WhatsApp, OBS, Premiere Pro, schedule, Ayzil, Badsha, send message to partner."
     );
 
     let res = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
@@ -2253,7 +2295,6 @@ ipcMain.handle("transcribe-audio", async (_event, audioBase64) => {
       const fbFile = new File([buffer], "audio.wav", { type: "audio/wav" });
       fbForm.append("file", fbFile);
       fbForm.append("model", "whisper-large-v3-turbo");
-      fbForm.append("language", "en");
       fbForm.append("temperature", "0");
 
       res = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {

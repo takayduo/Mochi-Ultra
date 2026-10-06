@@ -35,6 +35,7 @@ for _stream in ("stdout", "stderr"):
 # ─────────────────────────────────────────────────────────────────────────────
 
 import asyncio
+import os
 import re
 import threading
 import time
@@ -1878,7 +1879,7 @@ class JarvisLive:
 
         p1 = (
             f"Greet the user warmly, mention it is {time_str}, and say you are checking if there are any new messages or tasks from {partner_name}.{session_clause} "
-            f"Keep it to 2 short sentences max. Do not call any tools.{lang_clause}{name_clause}"
+            f"Keep it to 2 short sentences max. No tools needed for this greeting.{lang_clause}{name_clause}"
         )
 
         # Clear the turn-done event so we can wait for Phase 1 to finish
@@ -1969,7 +1970,7 @@ class JarvisLive:
                 p2 = (
                     f"[BRIEFING] Here is the status for {p_name}:\n{details_str}\n\n"
                     f"In 1 or 2 natural, concise sentences, inform the user about {p_name}'s messages and tasks. "
-                    "If there are none, simply let the user know they are all caught up. Do not call any tools."
+                    "If there are none, simply let the user know they are all caught up. Remind them you are ready to play music, open apps, control the PC, or do any task. "
                     f"{lang_str}"
                 )
 

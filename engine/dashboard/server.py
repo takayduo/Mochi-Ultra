@@ -837,21 +837,38 @@ class DashboardServer:
 
         return app
 
+def _is_port_available(port: int) -> bool:
+    import socket
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            s.bind(("0.0.0.0", port))
+            return True
+    except Exception:
+        return False
+
+
     # ── serve ─────────────────────────────────────────────────────────────
 
     async def _serve_alias(self) -> None:
-        """Second HTTPS server on PORT+1 sharing the same app and in-memory state.
-        Chrome HTTPS-upgrades any bare IP:PORT the user types, so this port also needs TLS.
-        User types IP:8001 → Chrome tries https → self-signed cert warning → accept once → done."""
-        ssl_key  = BASE_DIR / "config" / "certs" / "jarvis.key"
-        ssl_cert = BASE_DIR / "config" / "certs" / "jarvis.crt"
-        asyncio.get_event_loop().run_in_executor(None, _ensure_network_access, PORT + 1)
-        cfg = uvicorn.Config(
-            self.app, host="0.0.0.0", port=PORT + 1, log_level="warning",
-            ssl_keyfile=str(ssl_key), ssl_certfile=str(ssl_cert),
-        )
-        print(f"[Dashboard] Manual entry:  {self._ip}:{PORT + 1}  (type in browser, accept cert once)")
-        await uvicorn.Server(cfg).serve()
+        """Second HTTPS server on PORT+1 sharing the same app and in-memory state."""
+        try:
+            if not _is_port_available(PORT + 1):
+                print(f"[Dashboard] Port {PORT + 1} in use, skipping alias.")
+                return
+            ssl_key  = BASE_DIR / "config" / "certs" / "jarvis.key"
+            ssl_cert = BASE_DIR / "config" / "certs" / "jarvis.crt"
+            asyncio.get_event_loop().run_in_executor(None, _ensure_network_access, PORT + 1)
+            cfg = uvicorn.Config(
+                self.app, host="0.0.0.0", port=PORT + 1, log_level="warning",
+                ssl_keyfile=str(ssl_key), ssl_certfile=str(ssl_cert),
+            )
+            print(f"[Dashboard] Manual entry:  {self._ip}:{PORT + 1}  (type in browser, accept cert once)")
+            server = uvicorn.Server(cfg)
+            server.install_signal_handlers = lambda: None
+            await server.serve()
+        except BaseException as e:
+            print(f"[Dashboard] Alias server exited safely: {e}")
 
     async def serve(self) -> None:
         if not _DEPS_OK:
@@ -859,26 +876,39 @@ class DashboardServer:
             print("[Dashboard] Run:  pip install fastapi 'uvicorn[standard]' cryptography")
             return
 
-        # Firewall setup runs in a thread — uvicorn starts immediately,
-        # no waiting for UAC dialogs or subprocess timeouts.
-        asyncio.get_event_loop().run_in_executor(None, _ensure_network_access, PORT)
+        try:
+            target_port = PORT
+            if not _is_port_available(target_port):
+                found = False
+                for p in range(8010, 8035):
+                    if _is_port_available(p):
+                        target_port = p
+                        found = True
+                        break
+                if not found:
+                    print(f"[Dashboard] Port {PORT} and alternatives in use — dashboard disabled.")
+                    return
 
-        # Generate the TLS pair on first run so no private key ships in the repo.
-        _ensure_certs()
+            asyncio.get_event_loop().run_in_executor(None, _ensure_network_access, target_port)
+            _ensure_certs()
 
-        use_ssl  = self._ssl_enabled()
-        ssl_key  = BASE_DIR / "config" / "certs" / "jarvis.key"
-        ssl_cert = BASE_DIR / "config" / "certs" / "jarvis.crt"
+            use_ssl  = self._ssl_enabled()
+            ssl_key  = BASE_DIR / "config" / "certs" / "jarvis.key"
+            ssl_cert = BASE_DIR / "config" / "certs" / "jarvis.crt"
 
-        if use_ssl:
-            asyncio.create_task(self._serve_alias())
+            if use_ssl and target_port == PORT:
+                asyncio.create_task(self._serve_alias())
 
-        cfg = uvicorn.Config(
-            self.app, host="0.0.0.0", port=PORT, log_level="warning",
-            **({"ssl_keyfile": str(ssl_key), "ssl_certfile": str(ssl_cert)} if use_ssl else {}),
-        )
+            cfg = uvicorn.Config(
+                self.app, host="0.0.0.0", port=target_port, log_level="warning",
+                **({"ssl_keyfile": str(ssl_key), "ssl_certfile": str(ssl_cert)} if use_ssl else {}),
+            )
 
-        proto = "https" if use_ssl else "http"
-        print(f"[Dashboard] {proto}://{self._ip}:{PORT}")
-        print("[Dashboard] Press 'Remote Control' in JARVIS UI to get the QR code.")
-        await uvicorn.Server(cfg).serve()
+            proto = "https" if use_ssl else "http"
+            print(f"[Dashboard] {proto}://{self._ip}:{target_port}")
+            print("[Dashboard] Press 'Remote Control' in JARVIS UI to get the QR code.")
+            server = uvicorn.Server(cfg)
+            server.install_signal_handlers = lambda: None
+            await server.serve()
+        except BaseException as e:
+            print(f"[Dashboard] Server exited safely: {e}")
