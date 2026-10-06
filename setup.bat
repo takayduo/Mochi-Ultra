@@ -1,10 +1,10 @@
 @echo off
 setlocal enabledelayedexpansion
-title Mochi Setup & Launcher
+title Mochi Ultra Setup & Launcher
 cd /d "%~dp0"
 
 echo ===================================================
-echo             MOCHI INSTALLER & LAUNCHER
+echo          MOCHI ULTRA INSTALLER & LAUNCHER
 echo ===================================================
 echo.
 
@@ -59,20 +59,33 @@ if not exist "node_modules\electron\dist\electron.exe" (
     powershell -NoProfile -Command "$v = '44.5.1'; if (Test-Path 'node_modules\electron\package.json') { $v = (Get-Content 'node_modules\electron\package.json' -Raw | ConvertFrom-Json).version }; $zip = \"$env:TEMP\electron.zip\"; Invoke-WebRequest -Uri \"https://github.com/electron/electron/releases/download/v$v/electron-v$v-win32-x64.zip\" -OutFile $zip; if (-not (Test-Path 'node_modules\electron\dist')) { New-Item -ItemType Directory -Path 'node_modules\electron\dist' -Force | Out-Null }; Expand-Archive -Path $zip -DestinationPath 'node_modules\electron\dist' -Force; Set-Content -Path 'node_modules\electron\path.txt' -Value 'electron.exe' -NoNewline; Remove-Item -Force $zip -ErrorAction SilentlyContinue" >nul 2>nul
 )
 
-:: 3. Build Mochi
-echo [*] Building Mochi...
+:: 3. Check for Python & install engine requirements (Mark-LV Engine)
+if exist "engine\requirements.txt" (
+    echo [*] Checking Python dependencies for engine...
+    where python >nul 2>nul
+    if !ERRORLEVEL! EQU 0 (
+        python -m pip install -r engine\requirements.txt --quiet --disable-pip-version-check
+        echo [OK] Python engine dependencies installed!
+    ) else (
+        echo [!] Python not found in PATH. Make sure Python 3.10+ is installed for engine features.
+    )
+    echo.
+)
+
+:: 4. Build Mochi Ultra
+echo [*] Building Mochi Ultra...
 call npm run build
 
-:: 4. Create Desktop Shortcut pointing directly to electron.exe (no .vbs!)
-powershell -NoProfile -Command "$wsh = New-Object -ComObject WScript.Shell; $s = $wsh.CreateShortcut([System.IO.Path]::Combine([Environment]::GetFolderPath('Desktop'), 'Mochi.lnk')); $electron = [System.IO.Path]::Combine('%~dp0', 'node_modules\electron\dist\electron.exe'); if (Test-Path $electron) { $s.TargetPath = $electron; $s.Arguments = '.' } else { $s.TargetPath = 'cmd.exe'; $s.Arguments = '/c \"\"%~dp0Launch Mochi.bat\"\"' }; $s.WorkingDirectory = '%~dp0'; if (Test-Path '%~dp0public\icons\icon.ico') { $s.IconLocation = '%~dp0public\icons\icon.ico,0' }; $s.Description = 'Mochi — Creator Desktop Companion'; $s.Save()" >nul 2>nul
+:: 5. Create Desktop Shortcut pointing directly to electron.exe (no .vbs!)
+powershell -NoProfile -Command "$wsh = New-Object -ComObject WScript.Shell; $s = $wsh.CreateShortcut([System.IO.Path]::Combine([Environment]::GetFolderPath('Desktop'), 'Mochi Ultra.lnk')); $electron = [System.IO.Path]::Combine('%~dp0', 'node_modules\electron\dist\electron.exe'); if (Test-Path $electron) { $s.TargetPath = $electron; $s.Arguments = '.' } else { $s.TargetPath = 'cmd.exe'; $s.Arguments = '/c \"\"%~dp0Launch Mochi.bat\"\"' }; $s.WorkingDirectory = '%~dp0'; if (Test-Path '%~dp0public\icons\icon.ico') { $s.IconLocation = '%~dp0public\icons\icon.ico,0' }; $s.Description = 'Mochi Ultra — AI Desktop Companion'; $s.Save()" >nul 2>nul
 
 echo.
 echo ===================================================
-echo   [SUCCESS] Mochi is installed and ready!
-echo   A desktop shortcut 'Mochi' has been created.
+echo   [SUCCESS] Mochi Ultra is installed and ready!
+echo   A desktop shortcut 'Mochi Ultra' has been created.
 echo ===================================================
 echo.
-echo Starting Mochi now...
+echo Starting Mochi Ultra now...
 if exist "%~dp0node_modules\electron\dist\electron.exe" (
     start "" "%~dp0node_modules\electron\dist\electron.exe" "%~dp0."
 ) else (

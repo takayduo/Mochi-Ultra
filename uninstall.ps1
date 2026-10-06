@@ -1,55 +1,68 @@
-# 🍡 Mochi — 1-Click Automated Uninstaller for Windows
+# 🍡 Mochi Ultra — 1-Click Automated Uninstaller for Windows
 $ErrorActionPreference = "SilentlyContinue"
 
 Write-Host ""
 Write-Host "===================================================" -ForegroundColor Magenta
-Write-Host "         🍡 MOCHI 1-CLICK UNINSTALLER              " -ForegroundColor Cyan
+Write-Host "      🍡 MOCHI ULTRA 1-CLICK UNINSTALLER           " -ForegroundColor Cyan
 Write-Host "===================================================" -ForegroundColor Magenta
 Write-Host ""
 
 # 1. Close running Mochi processes
 Write-Host "[1/4] Stopping Mochi processes..." -ForegroundColor Yellow
-Get-Process electron -ErrorAction SilentlyContinue | Where-Object {
-    $_.Path -like "*Mochi-Eye*" -or $_.CommandLine -like "*Mochi*"
+Get-Process electron, python, pythonw -ErrorAction SilentlyContinue | Where-Object {
+    $_.Path -like "*Mochi-Ultra*" -or $_.Path -like "*Mochi-Eye*" -or $_.CommandLine -like "*Mochi*" -or $_.CommandLine -like "*mochi_bridge*"
 } | Stop-Process -Force -ErrorAction SilentlyContinue
 Start-Sleep -Seconds 1
 Write-Host "      ✓ Stopped running processes" -ForegroundColor Green
 
-# 2. Remove Desktop Shortcut
+# 2. Remove Desktop Shortcuts
 Write-Host "[2/4] Removing Desktop shortcut..." -ForegroundColor Yellow
 $desktopPath = [System.Environment]::GetFolderPath([System.Environment+SpecialFolder]::Desktop)
-$shortcutPath = Join-Path $desktopPath "Mochi Eye.lnk"
-if (Test-Path $shortcutPath) {
-    Remove-Item -Force $shortcutPath -ErrorAction SilentlyContinue
+$shortcuts = @("Mochi Ultra.lnk", "Mochi Eye.lnk", "Mochi.lnk")
+foreach ($s in $shortcuts) {
+    $shortcutPath = Join-Path $desktopPath $s
+    if (Test-Path $shortcutPath) {
+        Remove-Item -Force $shortcutPath -ErrorAction SilentlyContinue
+    }
 }
-Write-Host "      ✓ Desktop shortcut removed" -ForegroundColor Green
+Write-Host "      ✓ Desktop shortcuts removed" -ForegroundColor Green
 
 # 3. Clean up Windows Startup (Shortcut & Registry)
 Write-Host "[3/4] Removing from Windows Startup..." -ForegroundColor Yellow
 $startupFolder = [System.IO.Path]::Combine($env:APPDATA, "Microsoft", "Windows", "Start Menu", "Programs", "Startup")
-$startupLnk = Join-Path $startupFolder "Mochi.lnk"
-$legacyVbs = Join-Path $startupFolder "CoucouCreator.vbs"
-if (Test-Path $startupLnk) { Remove-Item -Force $startupLnk -ErrorAction SilentlyContinue }
-if (Test-Path $legacyVbs) { Remove-Item -Force $legacyVbs -ErrorAction SilentlyContinue }
+$startupShortcuts = @("Mochi Ultra.lnk", "Mochi Eye.lnk", "Mochi.lnk", "CoucouCreator.vbs")
+foreach ($s in $startupShortcuts) {
+    $p = Join-Path $startupFolder $s
+    if (Test-Path $p) { Remove-Item -Force $p -ErrorAction SilentlyContinue }
+}
 
 Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "CoucouCreator" -ErrorAction SilentlyContinue
 Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "Mochi" -ErrorAction SilentlyContinue
+Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "Mochi Ultra" -ErrorAction SilentlyContinue
 Write-Host "      ✓ Startup entries removed" -ForegroundColor Green
 
 # 4. Remove Mochi Folder & Cache
 Write-Host "[4/4] Removing Mochi files and data..." -ForegroundColor Yellow
-$installFolder = "$env:USERPROFILE\Mochi-Eye"
-if (Test-Path $installFolder) {
-    Remove-Item -Recurse -Force $installFolder -ErrorAction SilentlyContinue
+$installFolders = @("$env:USERPROFILE\Mochi-Ultra", "$env:USERPROFILE\Mochi-Eye")
+foreach ($folder in $installFolders) {
+    if (Test-Path $folder) {
+        Remove-Item -Recurse -Force $folder -ErrorAction SilentlyContinue
+    }
 }
-$appDataRoaming = Join-Path $env:APPDATA "mochi-eye"
-if (Test-Path $appDataRoaming) {
-    Remove-Item -Recurse -Force $appDataRoaming -ErrorAction SilentlyContinue
+$appDataFolders = @(
+    (Join-Path $env:APPDATA "mochi-ultra"),
+    (Join-Path $env:APPDATA "mochi-eye"),
+    (Join-Path $env:LOCALAPPDATA "mochi-ultra")
+)
+foreach ($folder in $appDataFolders) {
+    if (Test-Path $folder) {
+        Remove-Item -Recurse -Force $folder -ErrorAction SilentlyContinue
+    }
 }
 Write-Host "      ✓ Mochi files and cache cleaned" -ForegroundColor Green
 
 Write-Host ""
 Write-Host "===================================================" -ForegroundColor Green
-Write-Host "   🎉 SUCCESS: Mochi has been completely removed!  " -ForegroundColor Green
+Write-Host "🎉 SUCCESS: Mochi Ultra has been completely removed!" -ForegroundColor Green
 Write-Host "===================================================" -ForegroundColor Green
 Write-Host ""

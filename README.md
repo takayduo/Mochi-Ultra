@@ -1,7 +1,7 @@
 # 🍡 Mochi Ultra — AI Desktop Companion with Autonomous PC Control Engine
 
 > **The ultimate fusion of Mochi's desktop companion and Mark-LV's autonomous PC control engine.**
-> Featuring authentic 2D squircle physics, eye-following animations, live peer-to-peer partner chat, daily creator schedule, safe Remote Desktop Co-Pilot, and **Mark-LV Autonomous PC Control (clicking, typing, app launching, browser navigation, window management, system settings, document processing, vision, and long-term memory)**.
+> Featuring authentic 2D squircle physics, eye-following animations, live peer-to-peer partner chat, daily creator schedule, safe Remote Desktop Co-Pilot, and **Mark-LV Autonomous PC Control (clicking, typing, app launching, process closing, browser navigation, window management, system settings, document processing, vision, and long-term memory)**.
 
 ---
 
@@ -9,6 +9,9 @@
 
 - ⚡ **Mark-LV Autonomous PC Control Engine**:
   - **Direct Computer Control**: Autonomous mouse clicking, typing, hotkeys, scroll, drag, screenshots, and visual element detection on screen.
+  - **Targeted App Closer (`close_app`)**: Intelligent dual-tier app closing. First prioritizes custom user entries in **Application Paths**; if not found, performs fuzzy matching against active running Windows processes (handles complex game executables like Valorant / `VALORANT-Win64-Shipping.exe`, Riot Client, Steam, Discord, OBS, etc.). Includes an **anti-self-close safety shield** so Mochi and Electron can never accidentally terminate themselves.
+  - **Long-Term Memory Vault**: Bi-directional persistent memory engine (`engine/memory/long_term.json`) with interactive GUI controls (`+ Remember` to add, `🗑️ Forget` to delete) and autonomous CLI bridge (`mochi_bridge.py save-memory`, `delete-memory`).
+  - **Dual LLM Parity Architecture**: Flawless execution across both Gemini Live (`gemini-2.5-flash`, native multimodal live API with real-time video/audio) and Groq / OpenRouter. Built-in tool calling loop verifies actual task execution instead of hallucinating "done".
   - **Browser Automation**: Playwright autonomous web browser navigation, searching, form filling, and interaction.
   - **System Settings Mastery**: Real-time volume, brightness, mute, dark mode, task manager, window snapping, sleep display, and power controls.
   - **Universal App Launcher**: Open or terminate any desktop application or Windows store executable.
@@ -17,17 +20,19 @@
   - **Flight Finder & Game Updater**: Google Flights search and Steam/Epic Games updater and scheduler.
   - **Autonomous Dev Agent**: Run Python scripts, code helpers, and autonomous developer problem solvers.
   - **Gemini Live Voice & Audio Routing**: Gemini Live models (`Charon`, `Puck`, `Kore`, `Fenrir`, `Aoede`), openWakeWord gating ("Hey Jarvis" / "Hey Mochi"), and hardware audio routing.
-  - **Long-Term Memory Vault**: Persistent memory across conversations categorized into identity, preferences, projects, relationships, wishes, and notes.
 - 🖥️ **Remote Desktop Co-Pilot (Mochi Eye)**:
   - **Mutual Permission**: Either partner can click *"Request Remote Access"*. The other receives an interactive prompt to Accept or Decline.
   - **Full Control**: Smooth 60 FPS remote screen view, mouse movement, dragging, clicking, and keyboard shortcuts.
   - **GPU-Safe (Zero Virtual Drivers)**: Uses Microsoft DirectX Desktop Duplication (DXGI) without any intrusive kernel or virtual display drivers.
   - **Fullscreen Viewer Window**: Mochi's top notch stays small and pretty on your main screen, while the remote partner's screen opens in a dedicated window that can be toggled Fullscreen with 1 click (<kbd>F11</kbd>).
   - **1-Click Disconnect**: Both parties have immediate control to end the remote session at any second.
-- 🍡 **Authentic Canvas 2D Physics**: Exact squircle superellipse math, cursor-following pupils, eye blinks, breathing springs, particle systems (hearts, stars, sweat drops), and emotional states (`idle`, `thinking`, `happy`, `love`, `dizzy`, `annoyed`, `sleeping`, `error`).
+- 🍡 **Authentic Canvas 2D Physics & Non-Disruptive Notch UX**:
+  - Exact squircle superellipse math, cursor-following pupils, eye blinks, breathing springs, particle systems (hearts, stars, sweat drops), and emotional states (`idle`, `thinking`, `happy`, `love`, `dizzy`, `annoyed`, `sleeping`, `error`).
+  - **Click-to-Open Notch UX**: Smoothly expands from the mini notch into the full companion island without cutting off AI voice responses.
 - 💬 **Live Partner Chat (Badsha 👤 ⟷ Ayzil 💖)**:
   - Sub-50ms real-time peer-to-peer messaging via Supabase Realtime broadcast.
   - 🌙 **24/7 Offline Cloud Storage**: Messages sent while your PC is off are safely stored and delivered the moment you turn on your PC.
+  - 🔍 **Cloud Mailbox Diagnostics**: Live connection test button and table status indicator in Settings (`Test Database Tables`).
   - Sound chimes (`blip.wav`, `greet.wav`) on incoming messages.
   - Unread count badge on the chat tab when collapsed.
   - Desktop native Windows notifications.
@@ -41,7 +46,7 @@
   - Ask schedule queries (*"What is our schedule for today?"*) and dictate partner messages (*"Send message to Ayzil: I'll be ready in 10 minutes"*).
 - 🚀 **App Launcher & Closer**:
   - Say or click to launch: Discord, WhatsApp, OBS, Premiere Pro, Roblox, Spotify, and more.
-  - Say *"Close OBS"* or *"Close WhatsApp"* to terminate background processes cleanly.
+  - Say *"Close OBS"* or *"Close Valorant"* to terminate background processes cleanly and safely.
   - Configure or remove shortcuts directly from the Settings GUI.
 - 📦 **File Eating Suction Physics**:
   - Drag and drop any video, thumbnail, or script onto Mochi.
@@ -55,7 +60,7 @@
 
 ## 📋 Required System & Software Prerequisites
 
-Before installing Mochi Eye, make sure you have:
+Before installing Mochi Ultra, make sure you have:
 
 1. **Operating System**:
    - **Windows 10 / 11** (Recommended for native sound, SAPI speech, and auto-start integration).
@@ -63,12 +68,15 @@ Before installing Mochi Eye, make sure you have:
 2. **Node.js**:
    - Version **18.0.0** or higher (LTS version 20+ recommended).
    - Download from [nodejs.org](https://nodejs.org/) (check with `node -v`).
+3. **Python (For Autonomous Engine)**:
+   - Version **3.10+** (Python 3.12 recommended).
+   - Download from [python.org](https://www.python.org/) or let the installer set it up.
 
 ---
 
 ## 🚀 Easy Installation Guide (Works on Any PC — Even Brand New!)
 
-You do **not** need Git or programming experience to run Mochi Eye. Choose whichever method is easiest for you:
+You do **not** need Git or programming experience to run Mochi Ultra. Choose whichever method is easiest for you:
 
 ---
 
@@ -78,13 +86,14 @@ Works on any fresh Windows 10/11 PC or Windows Sandbox (even with **no Git** and
 1. Press `Win + X` and click **Terminal** or **Windows PowerShell**.
 2. Paste this single command and press `Enter`:
    ```powershell
-   irm https://raw.githubusercontent.com/takayduo/Mochi-Eye/main/install.ps1 | iex
+   irm https://raw.githubusercontent.com/takayduo/Mochi-Ultra/main/install.ps1 | iex
    ```
 3. That's it! The script will:
-   - Auto-install Node.js if missing.
-   - Download the latest Mochi files (no Git needed).
+   - Auto-install Node.js and Python if missing.
+   - Download the latest Mochi Ultra files (no Git needed).
    - Install packages and build the desktop app.
-   - Create a **Mochi** shortcut on your Desktop and launch it immediately.
+   - Install Python autonomous engine requirements.
+   - Create a **Mochi Ultra** shortcut on your Desktop and launch it immediately.
 
 ---
 
@@ -92,19 +101,20 @@ Works on any fresh Windows 10/11 PC or Windows Sandbox (even with **no Git** and
 If you prefer not using commands at all:
 
 1. Click the green **`<> Code`** button at the top of this GitHub page and select **`Download ZIP`**.
-2. Right-click the downloaded `Mochi-main.zip` $\rightarrow$ click **Extract All…** $\rightarrow$ Extract.
+2. Right-click the downloaded `Mochi-Ultra-main.zip` $\rightarrow$ click **Extract All…** $\rightarrow$ Extract.
 3. Open the extracted folder and double-click **`setup.bat`**.
 4. The batch installer will auto-configure everything and create a desktop shortcut for you!
 
 ---
 
 ### 💻 Method 3: For Developers & Terminal Users (Git & NPM)
-If you already have Git and Node.js LTS installed:
+If you already have Git, Node.js LTS, and Python installed:
 
 ```bash
-git clone https://github.com/takayduo/Mochi.git
-cd Mochi
+git clone https://github.com/takayduo/Mochi-Ultra.git
+cd Mochi-Ultra
 npm install
+pip install -r engine/requirements.txt
 npm run build
 npm start
 ```
@@ -112,35 +122,35 @@ npm start
 ---
 
 ## 🖥️ How to Run After Installation
-Once installed, you can launch Mochi anytime:
-- **Desktop Shortcut**: Double-click the **Mochi** icon on your Desktop.
-- **Direct Launcher**: Double-click **`Launch Mochi.bat`** (instantly starts Mochi in background and closes the prompt).
+Once installed, you can launch Mochi Ultra anytime:
+- **Desktop Shortcut**: Double-click the **Mochi Ultra** icon on your Desktop.
+- **Direct Launcher**: Double-click **`Launch Mochi.bat`** (instantly starts Mochi Ultra in background and closes the prompt).
 - **Terminal Launch**: Run `npm start` or `npm run app`.
 
 ---
 
 ## 🗑️ How to Uninstall
 
-If you ever want to completely remove Mochi Eye from your PC:
+If you ever want to completely remove Mochi Ultra from your PC:
 
 ### 🌟 Option 1: 1-Line Automatic Uninstaller (Fastest)
 Open **PowerShell** and paste:
 ```powershell
-irm https://raw.githubusercontent.com/takayduo/Mochi-Eye/main/uninstall.ps1 | iex
+irm https://raw.githubusercontent.com/takayduo/Mochi-Ultra/main/uninstall.ps1 | iex
 ```
-This stops any running Mochi processes, removes the app folder, deletes the Desktop & Startup shortcuts, and cleans the cache automatically.
+This stops any running Mochi Ultra processes, removes the app folder, deletes the Desktop & Startup shortcuts, and cleans the cache automatically.
 
 ### ✋ Option 2: Manual Uninstallation (Simple 3 Steps)
 1. **Quit Mochi**: Right-click the Mochi icon in your Windows System Tray (near the clock) $\rightarrow$ click **Quit** (or end process in Task Manager).
-2. **Delete the App Folder**: Open File Explorer, go to your User folder (`C:\Users\YourUsername`), and delete the **`Mochi-Eye`** folder.
-3. **Delete the Desktop Shortcut**: Delete **`Mochi Eye`** from your Desktop.
-*(Optional: If you enabled "Run on PC Startup", press <kbd>Win</kbd> + <kbd>R</kbd>, type `shell:startup`, and delete `Mochi.lnk`).*
+2. **Delete the App Folder**: Open File Explorer, go to your User folder (`C:\Users\YourUsername`), and delete the **`Mochi-Ultra`** folder.
+3. **Delete the Desktop Shortcut**: Delete **`Mochi Ultra`** from your Desktop.
+*(Optional: If you enabled "Run on PC Startup", press <kbd>Win</kbd> + <kbd>R</kbd>, type `shell:startup`, and delete `Mochi Ultra.lnk`).*
 
 ---
 
 ## ⚙️ Quick Configuration Guide
 
-You do **NOT** need to edit any code files to configure Mochi. Everything is set up via the built-in Settings window:
+You do **NOT** need to edit any code files to configure Mochi Ultra. Everything is set up via the built-in Settings window:
 
 1. Click the **⚙️ Gear icon** on the Mochi top bar, or right-click the **Mochi icon** in your Windows System Tray $\rightarrow$ select **Settings…**.
 2. **AI Models & API Keys**:
@@ -235,13 +245,26 @@ end $$;
 ## 📁 Repository Structure & Required Files
 
 ```
-Mochi/
-├── electron/                  # Electron Main Process & Native APIs
-│   ├── main.js                # Core Electron lifecycle, window management & IPC
+Mochi-Ultra/
+├── electron/                  # Electron Main Process & Native Windows APIs
+│   ├── main.js                # Core lifecycle, window management, closeApplication, IPC
 │   ├── preload.js             # Secure ContextBridge between Electron & Renderer
-│   ├── supabase.js            # Live Realtime channels, presence & message broadcast
+│   ├── supabase.js            # Live Realtime channels, presence, 24/7 cloud mailbox
 │   ├── gdrive.js              # Google Drive OAuth & cross-PC file uploads
 │   └── sapi.js                # Windows SAPI native text-to-speech engine
+│
+├── engine/                    # Mark-LV Autonomous Python Engine
+│   ├── actions/               # 20+ autonomous tools (mouse, keyboard, browser, apps)
+│   │   ├── close_app.py       # Safe targeted process & Application Paths closer
+│   │   ├── open_app.py        # Application launcher prioritizing user shortcuts
+│   │   ├── computer_settings.py# Volume, display, lock, dark mode, task manager
+│   │   └── ...                # Playwright browser, file processing, vision, search
+│   ├── core/                  # LLM client, Gemini Live, Groq, hotkeys, audio routing
+│   ├── memory/                # Persistent Long-Term Memory Vault
+│   │   ├── memory_manager.py  # Read/write vault categories
+│   │   └── long_term.json     # Saved user facts, preferences & identity
+│   ├── mochi_bridge.py        # IPC bridge for tool execution & memory CLI commands
+│   └── requirements.txt       # Engine dependencies (PyAutoGUI, Playwright, etc.)
 │
 ├── src/                       # Frontend Application (TypeScript + Vite)
 │   ├── core/                  # Core audio, layout, state, voice & IPC bridge
@@ -263,7 +286,7 @@ Mochi/
 │   │   ├── integrations.ts    # App launcher pills
 │   │   └── views.ts           # Tab switcher & header layout
 │   ├── settings/              # Settings Window GUI
-│   │   ├── main.ts            # Settings inputs, tabs & save logic
+│   │   ├── main.ts            # Settings inputs, tabs, memory vault GUI & save logic
 │   │   └── settings.css       # Clean dark-mode stylesheet
 │   └── upload/                # File suction & eating canvas animations
 │
@@ -271,13 +294,14 @@ Mochi/
 │   ├── icons/                 # App and system tray icons (.ico, .png)
 │   └── sounds/                # 28 handcrafted .wav audio sound effects
 │
-├── install.ps1                # 1-line PowerShell installer (no Git/Node needed)
+├── install.ps1                # 1-line PowerShell installer (auto Node/Python/shortcuts)
+├── uninstall.ps1              # 1-line PowerShell uninstaller & cleanup
 ├── setup.bat                  # 1-click batch installer & dependency setup
 ├── Launch Mochi.bat           # 1-click Windows background launcher
 ├── package.json               # Node.js dependencies & scripts
 ├── tsconfig.json              # TypeScript compilation settings
 ├── vite.config.ts             # Vite multi-page build configuration
-└── README.md                  # Installation & documentation
+└── README.md                  # Comprehensive documentation & setup guides
 ```
 
 ---

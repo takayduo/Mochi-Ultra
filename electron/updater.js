@@ -62,7 +62,7 @@ async function checkForUpdates() {
   try {
     const res = await fetch(GITHUB_API_URL, {
       headers: {
-        "User-Agent": "Mochi-Eye-Updater",
+        "User-Agent": "Mochi-Ultra-Updater",
         Accept: "application/vnd.github.v3+json",
       },
     });
