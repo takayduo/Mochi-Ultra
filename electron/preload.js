@@ -120,6 +120,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
       "ai-audio-level",
       "ai-content",
       "ai-confirm",
+      "ai-ptt-state",
     ];
     if (validChannels.includes(channel)) {
       const handler = (_event, ...args) => callback(...args);

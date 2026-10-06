@@ -128,6 +128,7 @@ const DEFAULT_SETTINGS = {
   voiceName: "Charon",
   wakeWordEnabled: false,
   pushToTalkEnabled: false,
+  pushToTalkChord: "ctrl+space",
   proactiveAudio: true,
   thinkingEnabled: false,
   mediaResolution: "medium",
@@ -1355,6 +1356,7 @@ function syncEngineConfig(settings) {
       voice_name: settings.voiceName || 'Charon',
       wake_word_enabled: !!settings.wakeWordEnabled,
       push_to_talk_enabled: !!settings.pushToTalkEnabled,
+      push_to_talk_chord: settings.pushToTalkChord || 'ctrl+space',
       proactive_audio: settings.proactiveAudio !== false,
       thinking_enabled: !!settings.thinkingEnabled,
       morning_brief_enabled: settings.morningBriefEnabled !== false,
@@ -1505,6 +1507,12 @@ function handleLiveEngineEvent(msg) {
     case 'audio_level': {
       if (overlayWin && !overlayWin.isDestroyed()) {
         overlayWin.webContents.send('ai-audio-level', msg.level || 0);
+      }
+      break;
+    }
+    case 'ptt_state': {
+      if (overlayWin && !overlayWin.isDestroyed()) {
+        overlayWin.webContents.send('ai-ptt-state', !!msg.held);
       }
       break;
     }
@@ -1669,8 +1677,19 @@ ipcMain.handle("save-settings", (_event, newSettings) => {
     if (oldProvider !== "gemini" || !mochiLiveProc || oldGeminiKey !== activeSettings.geminiApiKey) {
       if (mochiLiveProc) stopMochiLiveEngine();
       startMochiLiveEngine();
-    } else if (oldVoice !== activeSettings.voiceName) {
-      sendToLiveEngine({ cmd: "voice", voice: activeSettings.voiceName });
+    } else {
+      sendToLiveEngine({
+        cmd: "ptt_toggle",
+        enabled: !!activeSettings.pushToTalkEnabled,
+        chord: activeSettings.pushToTalkChord || "ctrl+space",
+      });
+      sendToLiveEngine({
+        cmd: "wake_toggle",
+        enabled: !!activeSettings.wakeWordEnabled,
+      });
+      if (oldVoice !== activeSettings.voiceName) {
+        sendToLiveEngine({ cmd: "voice", voice: activeSettings.voiceName });
+      }
     }
   } else {
     // Switched to groq or fallback provider

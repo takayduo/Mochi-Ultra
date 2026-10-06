@@ -341,6 +341,25 @@ function markLvSection(): HTMLElement {
       void save();
     });
 
+    const pttChordSelect = h("select", { style: "flex:1 1 auto;max-width:260px;" }) as HTMLSelectElement;
+    pttChordSelect.append(
+      h("option", { value: "ctrl+space", text: "Ctrl + Space (Default)" }),
+      h("option", { value: "space", text: "Spacebar" }),
+      h("option", { value: "capslock", text: "Caps Lock" }),
+      h("option", { value: "tilde", text: "~ (Tilde / Grave ` )" }),
+      h("option", { value: "f8", text: "F8" }),
+      h("option", { value: "f9", text: "F9" }),
+      h("option", { value: "f10", text: "F10" }),
+      h("option", { value: "alt+space", text: "Alt + Space" }),
+      h("option", { value: "shift+space", text: "Shift + Space" }),
+      h("option", { value: "insert", text: "Insert" })
+    );
+    pttChordSelect.value = settings.pushToTalkChord || "ctrl+space";
+    pttChordSelect.addEventListener("change", () => {
+      settings.pushToTalkChord = pttChordSelect.value;
+      void save();
+    });
+
     const proactiveAudioToggle = toggle(settings.proactiveAudio !== false, (v) => {
       settings.proactiveAudio = v;
       void save();
@@ -420,6 +439,7 @@ function markLvSection(): HTMLElement {
       h("div", { class: "group-title", text: "Voice Gating & Conversational Tuning" }),
       h("div", { class: "row" }, h("label", { text: "Wake-Word Gating" }), wakeWordToggle, h("span", { class: "hint", text: "Listens for 'Hey Jarvis' / 'Hey Mochi' before waking" })),
       h("div", { class: "row" }, h("label", { text: "Push-To-Talk" }), pushToTalkToggle, h("span", { class: "hint", text: "Hold key combo to speak to assistant" })),
+      h("div", { class: "row" }, h("label", { text: "Push-To-Talk Key" }), pttChordSelect, h("span", { class: "hint", text: "Key to hold down while speaking (Global Windows shortcut)" })),
       h("div", { class: "row" }, h("label", { text: "Proactive Audio" }), proactiveAudioToggle, h("span", { class: "hint", text: "Intelligently ignores background conversation" })),
       h("div", { class: "row" }, h("label", { text: "Deep Thinking Mode" }), thinkingToggle, h("span", { class: "hint", text: "Allow model reasoning tokens before replying" })),
       h("div", { class: "row" }, h("label", { text: "Morning Briefing" }), morningBriefToggle, h("span", { class: "hint", text: "Auto-briefs weather, news, and tasks on first startup" })),

@@ -75,6 +75,7 @@ class MochiHeadlessUI:
 
         # Callbacks set by JarvisLive.__init__
         self.on_push_to_talk = None
+        self.on_ptt_toggle = None
         self.ptt_hold = None
         self.on_text_command = None
         self.on_remote_clicked = None
@@ -249,6 +250,14 @@ def stdin_reader_thread(ui: MochiHeadlessUI, jarvis: JarvisLive):
                 enabled = cmd_data.get("enabled", False)
                 if ui.on_wake_toggle:
                     ui.on_wake_toggle(enabled)
+
+            elif cmd == "ptt_toggle":
+                enabled = cmd_data.get("enabled", False)
+                chord = cmd_data.get("chord", "ctrl+space")
+                if getattr(ui, "on_ptt_toggle", None):
+                    ui.on_ptt_toggle(enabled, chord)
+                elif getattr(ui, "on_push_to_talk", None):
+                    ui.on_push_to_talk(enabled, chord)
 
             elif cmd == "ptt":
                 held = cmd_data.get("held", False)

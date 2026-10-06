@@ -71,7 +71,7 @@ from actions.background_monitor import (
 from actions.web_search        import _news as _fetch_news_sync
 from memory.config_manager     import (
     get_brief_enabled, get_media_resolution, get_proactive_audio_enabled,
-    get_push_to_talk_enabled, get_thinking_enabled, get_turn_tuning, get_voice,
+    get_push_to_talk_enabled, get_push_to_talk_chord, get_thinking_enabled, get_turn_tuning, get_voice,
     get_wake_word_enabled, save_wake_word_enabled,    get_input_device, get_output_device,
 )
 from core                     import gemini as _gemini
@@ -576,6 +576,7 @@ class JarvisLive:
         # ahead of the words and cut every schedule short. 0 = nothing playing.
         self._play_cursor          = 0.0
         self.ui.on_push_to_talk   = self.set_push_to_talk
+        self.ui.on_ptt_toggle     = self.set_push_to_talk
         self.ui.ptt_hold          = self._on_ptt
         self.ui.on_text_command   = self._on_text_command
         self.ui.on_remote_clicked = self._make_remote_key
@@ -651,7 +652,7 @@ class JarvisLive:
         # session to talk to.
         if get_push_to_talk_enabled():
             try:
-                self.set_push_to_talk(True)
+                self.set_push_to_talk(True, get_push_to_talk_chord())
             except Exception as e:
                 print(f"[JARVIS] ⚠ Push-to-talk unavailable: {e}")
         # UI control surface for the Wake Word settings section.
@@ -879,10 +880,12 @@ class JarvisLive:
         elif not self.ui.muted:
             self.ui.set_state("LISTENING")
 
-    def set_push_to_talk(self, enabled: bool) -> str:
+    def set_push_to_talk(self, enabled: bool, chord=None) -> str:
         """Turn hold-to-talk on or off. Returns the scope actually achieved."""
         from core.hotkey import PushToTalk
+        from memory.config_manager import get_push_to_talk_chord
 
+        target_chord = chord or get_push_to_talk_chord()
         self._ptt_enabled = bool(enabled)
         self._ptt_held = False
         if not enabled:
@@ -892,7 +895,9 @@ class JarvisLive:
             return "off"
 
         if self._ptt is None:
-            self._ptt = PushToTalk(self._on_ptt)
+            self._ptt = PushToTalk(self._on_ptt, chord=target_chord)
+        else:
+            self._ptt.set_chord(target_chord)
         scope = self._ptt.start()
         # A window-scoped chord is a real limitation, not a detail — say it once
         # in the log so nobody wonders why it does nothing while another app is
@@ -909,14 +914,21 @@ class JarvisLive:
     def _on_ptt(self, held: bool) -> None:
         """Chord pressed or released — may arrive on the hotkey thread."""
         self._ptt_held = held
+        try:
+            if hasattr(self.ui, "emit"):
+                self.ui.emit("ptt_state", {"held": held})
+        except Exception:
+            pass
         if held:
+            if getattr(self, "_speaking", False):
+                self.interrupt()
             # Holding the key is also a way to wake it, so push-to-talk works
             # without having to say the wake word first.
             if self._wake_enabled and not self._awake:
                 self._awake = True
                 self._last_user_speech = time.monotonic()
         try:
-            self.ui.set_state("LISTENING" if held else "SLEEPING")
+            self.ui.set_state("LISTENING" if held else ("LISTENING" if not self._wake_enabled else "SLEEPING"))
         except Exception:
             pass
 

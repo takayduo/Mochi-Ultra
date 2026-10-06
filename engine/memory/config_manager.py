@@ -130,6 +130,15 @@ def save_push_to_talk_enabled(enabled: bool) -> None:
     _save_flag("push_to_talk_enabled", enabled)
 
 
+def get_push_to_talk_chord() -> str:
+    """Configured push-to-talk chord string, default 'ctrl+space'."""
+    return load_api_keys().get("push_to_talk_chord", "ctrl+space") or "ctrl+space"
+
+
+def save_push_to_talk_chord(chord: str) -> None:
+    _save_flag("push_to_talk_chord", str(chord or "ctrl+space").strip().lower())
+
+
 HUD_STYLES = ("face", "core")
 
 

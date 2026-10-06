@@ -608,13 +608,7 @@ export class Island {
         return;
       }
       if (State.mode !== "expanded") {
-        if (VoiceManager.isBusy() || VoiceManager.isSpeaking() || State.stateOverride === "finished" || State.stateOverride === "thinking") {
-          VoiceManager.stopSpeech();
-          State.stateOverride = null;
-          State.triggerEmote("surprised");
-          State.notify();
-        }
-        this.fsm.click();
+        this.fsm.forceHome();
         return;
       }
       if (this.isBotHit(e.clientX, e.clientY)) {
