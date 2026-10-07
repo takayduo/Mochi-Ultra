@@ -163,6 +163,21 @@ function loadSettings() {
   try {
     if (fs.existsSync(settingsPath)) {
       const loaded = { ...DEFAULT_SETTINGS, ...JSON.parse(fs.readFileSync(settingsPath, "utf-8")) };
+      if (!loaded.syncUrl || !loaded.syncUrl.trim()) {
+        loaded.syncUrl = DEFAULT_SETTINGS.syncUrl;
+      }
+      if (!loaded.syncApiKey || !loaded.syncApiKey.trim()) {
+        loaded.syncApiKey = DEFAULT_SETTINGS.syncApiKey;
+      }
+      if (!loaded.shareChannel || !loaded.shareChannel.trim()) {
+        loaded.shareChannel = DEFAULT_SETTINGS.shareChannel;
+      }
+      if (!loaded.userName || loaded.userName === "Me") {
+        loaded.userName = "Badsha";
+      }
+      if (!loaded.partnerName || loaded.partnerName === "Her") {
+        loaded.partnerName = "Ayzil";
+      }
       if (loaded.geminiModel === "gemini-3.8-flash" || loaded.geminiModel === "gemini-2.0-flash") {
         loaded.geminiModel = "gemini-2.5-flash";
       }
