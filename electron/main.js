@@ -330,15 +330,59 @@ function saveChatHistory(history) {
   }
 }
 
-// ── Mark-LV Autonomous Engine Python Bridge ─────────────────────────────────
 const engineDir = path.join(__dirname, "..", "engine");
 const bridgeScript = path.join(engineDir, "mochi_bridge.py");
 const markLvMainScript = path.join(engineDir, "main.py");
 
+function resolvePythonPath() {
+  const pyPathFile = path.join(engineDir, "python_path.txt");
+  if (fs.existsSync(pyPathFile)) {
+    try {
+      const savedPath = fs.readFileSync(pyPathFile, "utf-8").trim();
+      if (savedPath && fs.existsSync(savedPath)) {
+        return savedPath;
+      }
+    } catch {}
+  }
+
+  const standardPaths = [
+    path.join(process.env.LOCALAPPDATA || "", "Programs", "Python", "Python312", "python.exe"),
+    path.join(process.env.LOCALAPPDATA || "", "Programs", "Python", "Python311", "python.exe"),
+    path.join(process.env.LOCALAPPDATA || "", "Programs", "Python", "Python310", "python.exe"),
+    "C:\\Program Files\\Python312\\python.exe",
+    "C:\\Program Files\\Python311\\python.exe",
+    "C:\\Program Files\\Python310\\python.exe",
+    "C:\\Program Files (x86)\\Python312\\python.exe",
+    "C:\\Program Files (x86)\\Python311\\python.exe",
+  ];
+  for (const p of standardPaths) {
+    if (fs.existsSync(p)) return p;
+  }
+
+  try {
+    const whichRes = require("node:child_process").execSync("where python.exe", { encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"] });
+    const lines = whichRes.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    for (const line of lines) {
+      if (!line.toLowerCase().includes("windowsapps") && fs.existsSync(line)) {
+        return line;
+      }
+    }
+  } catch {}
+
+  try {
+    const whichPy = require("node:child_process").execSync("where py.exe", { encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"] });
+    const line = whichPy.split(/\r?\n/)[0]?.trim();
+    if (line && fs.existsSync(line)) return line;
+  } catch {}
+
+  return "python";
+}
+
 function runMochiBridgeCmd(cmd, ...args) {
   return new Promise((resolve) => {
     const procArgs = [bridgeScript, cmd, ...args];
-    const child = spawn("python", procArgs, {
+    const pyExe = resolvePythonPath();
+    const child = spawn(pyExe, procArgs, {
       cwd: engineDir,
       windowsHide: true,
       env: { ...process.env, PYTHONIOENCODING: "utf-8" },
@@ -1448,11 +1492,18 @@ function startMochiLiveEngine() {
   console.log('[Mark-LV Engine] Spawning live assistant process:', runnerScript);
 
   try {
-    mochiLiveProc = spawn('python', ['mochi_runner.py'], {
+    const pyExe = resolvePythonPath();
+    const pyDir = path.dirname(pyExe);
+    const pyScripts = path.join(pyDir, "Scripts");
+    const pathEnv = `${pyDir};${pyScripts};${process.env.PATH || ""}`;
+
+    console.log(`[Mark-LV Engine] Spawning with Python: ${pyExe}`);
+
+    mochiLiveProc = spawn(pyExe, ['mochi_runner.py'], {
       cwd: engineDir,
       windowsHide: true,
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUNBUFFERED: '1' },
+      env: { ...process.env, PATH: pathEnv, PYTHONIOENCODING: 'utf-8', PYTHONUNBUFFERED: '1' },
     });
 
     let buffer = '';
@@ -1488,6 +1539,10 @@ function startMochiLiveEngine() {
     mochiLiveProc.on('close', (code) => {
       console.log(`[Mark-LV Engine] Process closed with code ${code}`);
       mochiLiveProc = null;
+      while (pendingTextResolvers.length > 0) {
+        const resolve = pendingTextResolvers.shift();
+        resolve({ text: "Mochi live engine is restarting. Please try again." });
+      }
       if (!isQuitting && (activeSettings.aiProvider || 'gemini') === 'gemini' && activeSettings.geminiApiKey) {
         clearTimeout(mochiLiveRestartTimer);
         mochiLiveRestartTimer = setTimeout(() => {
@@ -1499,6 +1554,10 @@ function startMochiLiveEngine() {
     mochiLiveProc.on('error', (err) => {
       console.error('[Mark-LV Engine] Process error:', err);
       mochiLiveProc = null;
+      while (pendingTextResolvers.length > 0) {
+        const resolve = pendingTextResolvers.shift();
+        resolve({ text: `Mochi engine process error: ${err.message}` });
+      }
     });
 
   } catch (err) {
@@ -1694,7 +1753,7 @@ ipcMain.handle("marklv-execute-action", async (_event, { name, parameters }) => 
 
 ipcMain.handle("marklv-launch-hud", async () => {
   try {
-    const hudChild = spawn("python", [markLvMainScript], {
+    const hudChild = spawn(resolvePythonPath(), [markLvMainScript], {
       cwd: engineDir,
       detached: true,
       stdio: "ignore",
@@ -2085,8 +2144,8 @@ ipcMain.handle("perform-update", async () => {
   }
 });
 
-// ── Groq Secondary AI Engine ────────────────────────────────────────────────
-async function callGroqAI(query, context) {
+// ── AI Companion Prompt & Action Executor ──────────────────────────────────
+function buildCompanionSystemPrompt() {
   const userRole = activeSettings.userRole || "me";
   const partnerRole = userRole === "me" ? "her" : "me";
   const currentUserName = userRole === "me" ? (activeSettings.userName || "Badsha") : (activeSettings.partnerName || "Ayzil");
@@ -2104,7 +2163,7 @@ async function callGroqAI(query, context) {
     ? partnerTasks.map((s) => `  [${s.completed ? "DONE" : "PENDING"}] ${s.time ? s.time + " - " : ""}${s.title}${s.assignedBy === userRole ? ` (set by ${currentUserName})` : ""}`).join("\n")
     : "No tasks scheduled for today.";
 
-  const systemPrompt = `You are Mochi, a warm, super cute, energetic, and snappy AI desktop companion for YouTube creator couple ${currentUserName} and ${partnerUserName}.
+  return `You are Mochi, a warm, super cute, energetic, and snappy AI desktop companion for YouTube creator couple ${currentUserName} and ${partnerUserName}.
 CURRENT ACTIVE USER ON THIS PC: ${currentUserName}
 THEIR PARTNER: ${partnerUserName}
 
@@ -2134,7 +2193,201 @@ CRITICAL IDENTITY & TASK OWNERSHIP RULES:
 15. If asked to open a website or URL: Say e.g. "Opening that website right now!" and append [BROWSER_OPEN: website_url].
 16. If asked to adjust volume, mute, or media controls: Say e.g. "Got it!" and append [MEDIA_CONTROL: command_or_volume].
 Be sweet, playful, and helpful!`;
+}
 
+async function executeActionTags(rawReply) {
+  const userRole = activeSettings.userRole || "me";
+  const partnerRole = userRole === "me" ? "her" : "me";
+  const currentUserName = userRole === "me" ? (activeSettings.userName || "Badsha") : (activeSettings.partnerName || "Ayzil");
+  const partnerUserName = userRole === "me" ? (activeSettings.partnerName || "Ayzil") : (activeSettings.userName || "Badsha");
+
+  // Execute [SEND_CHAT: ...]
+  const chatMatch = /\[SEND_CHAT:\s*({[^}]+})\]/i.exec(rawReply);
+  if (chatMatch) {
+    try {
+      const parsed = JSON.parse(chatMatch[1]);
+      if (parsed.text) {
+        const history = loadChatHistory();
+        const newMsg = {
+          id: "msg_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
+          sender: currentUserName,
+          recipient: partnerUserName,
+          senderRole: userRole,
+          text: parsed.text,
+          timestamp: Date.now(),
+          read: true,
+          isAiGenerated: true,
+        };
+        history.push(newMsg);
+        saveChatHistory(history);
+        try { broadcastChatMessage(newMsg); } catch {}
+        if (overlayWin && !overlayWin.isDestroyed()) {
+          overlayWin.webContents.send("partner-chat-received", newMsg);
+        }
+      }
+    } catch (e) {
+      console.warn("Parse SEND_CHAT error:", e);
+    }
+  }
+
+  // Execute [ADD_TASK: ...]
+  const taskMatch = /\[ADD_TASK:\s*({[^}]+})\]/i.exec(rawReply);
+  if (taskMatch) {
+    try {
+      const parsed = JSON.parse(taskMatch[1]);
+      if (parsed.title) {
+        const forRole = (parsed.for || userRole).toLowerCase();
+        const assignee = forRole.includes("her") || forRole.includes("partner") ? partnerRole : (forRole.includes("both") ? "both" : userRole);
+        const newItem = {
+          id: "task_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6),
+          title: parsed.title,
+          time: parsed.time || "",
+          assignee: assignee,
+          assignedBy: userRole,
+          completed: false,
+          createdAt: Date.now(),
+        };
+        activeSchedule.push(newItem);
+        saveSchedule(activeSchedule);
+        syncScheduleToPartner();
+        if (overlayWin && !overlayWin.isDestroyed()) {
+          overlayWin.webContents.send("schedule-updated", activeSchedule);
+        }
+      }
+    } catch (e) {
+      console.warn("Parse ADD_TASK error:", e);
+    }
+  }
+
+  // Execute [MARK_DONE: ...]
+  const doneMatch = /\[MARK_DONE:\s*([^\]]+)\]/i.exec(rawReply);
+  if (doneMatch) {
+    const queryDone = doneMatch[1].trim().toLowerCase();
+    const item = activeSchedule.find((s) => s.id === queryDone || s.title.toLowerCase().includes(queryDone));
+    if (item) {
+      item.completed = true;
+      item.completedAt = Date.now();
+      saveSchedule(activeSchedule);
+      syncScheduleToPartner();
+      if (overlayWin && !overlayWin.isDestroyed()) {
+        overlayWin.webContents.send("schedule-updated", activeSchedule);
+      }
+    }
+  }
+
+  // Execute [LAUNCH: ...]
+  const launchMatch = /\[LAUNCH:\s*([^\]]+)\]/i.exec(rawReply);
+  if (launchMatch) {
+    const target = launchMatch[1].trim();
+    void launchApplication(target);
+  }
+
+  // Execute [CLOSE: ...]
+  const closeMatch = /\[CLOSE:\s*([^\]]+)\]/i.exec(rawReply);
+  if (closeMatch) {
+    const target = closeMatch[1].trim();
+    void closeApplication(target);
+  }
+
+  // Execute [PLAY_YOUTUBE: ...]
+  const ytMatch = /\[PLAY_YOUTUBE:\s*([^\]]+)\]/i.exec(rawReply);
+  if (ytMatch) {
+    const ytQuery = ytMatch[1].trim();
+    console.log(`[Action] Playing YouTube for query: "${ytQuery}"`);
+    void runMochiBridgeCmd("execute", "youtube_video", JSON.stringify({ action: "play", query: ytQuery })).catch((err) => {
+      console.warn("[Action] Bridge youtube_video fallback to shell:", err);
+      shell.openExternal(`https://www.youtube.com/results?search_query=${encodeURIComponent(ytQuery)}`);
+    });
+  }
+
+  // Execute [WEB_SEARCH: ...]
+  const searchMatch = /\[WEB_SEARCH:\s*([^\]]+)\]/i.exec(rawReply);
+  if (searchMatch) {
+    const sQuery = searchMatch[1].trim();
+    console.log(`[Action] Searching web for: "${sQuery}"`);
+    void runMochiBridgeCmd("execute", "web_search", JSON.stringify({ query: sQuery, mode: "search" })).catch((err) => {
+      console.warn("[Action] Bridge web_search fallback to shell:", err);
+      shell.openExternal(`https://www.google.com/search?q=${encodeURIComponent(sQuery)}`);
+    });
+  }
+
+  // Execute [BROWSER_OPEN: ...]
+  const browserMatch = /\[BROWSER_OPEN:\s*([^\]]+)\]/i.exec(rawReply);
+  if (browserMatch) {
+    let bUrl = browserMatch[1].trim();
+    if (!/^https?:\/\//i.test(bUrl)) bUrl = "https://" + bUrl;
+    console.log(`[Action] Opening browser URL: "${bUrl}"`);
+    shell.openExternal(bUrl);
+  }
+
+  // Execute [MEDIA_CONTROL: ...]
+  const mediaMatch = /\[MEDIA_CONTROL:\s*([^\]]+)\]/i.exec(rawReply);
+  if (mediaMatch) {
+    const mCmd = mediaMatch[1].trim();
+    console.log(`[Action] Media/setting command: "${mCmd}"`);
+    void runMochiBridgeCmd("execute", "computer_settings", JSON.stringify({ description: mCmd }));
+  }
+}
+
+// ── Gemini REST Engine (Instant Text Chat & Action Fallback) ────────────────
+async function callGeminiAI(query, context) {
+  const key = activeSettings.geminiApiKey || process.env.GEMINI_API_KEY;
+  if (!key) {
+    return { text: "Please enter your free Google Gemini API key in Settings (⚙️) to chat with me!" };
+  }
+
+  const systemPrompt = buildCompanionSystemPrompt();
+  const candidateModels = [
+    activeSettings.geminiModel || "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-1.5-flash",
+    "gemini-flash-latest",
+  ];
+
+  for (const model of candidateModels) {
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          system_instruction: {
+            parts: [{ text: systemPrompt }]
+          },
+          contents: [
+            { role: "user", parts: [{ text: query }] }
+          ],
+          generationConfig: {
+            temperature: 0.7,
+            maxOutputTokens: 350
+          }
+        })
+      });
+
+      if (!res.ok) {
+        const errBody = await res.text();
+        console.warn(`[Gemini REST] Model ${model} returned ${res.status}:`, errBody);
+        continue;
+      }
+
+      const data = await res.json();
+      const rawReply = (data.candidates?.[0]?.content?.parts?.[0]?.text || "").trim();
+      if (!rawReply) continue;
+
+      await executeActionTags(rawReply);
+      const cleanReply = rawReply.replace(/\[[A-Z_]+:[^\]]*\]/gi, "").trim();
+      return { text: cleanReply || rawReply };
+    } catch (err) {
+      console.warn(`[Gemini REST] Error calling ${model}:`, err.message);
+    }
+  }
+
+  return { text: "I couldn't reach Gemini right now. Please verify your internet connection or check your Gemini API key in Settings!" };
+}
+
+// ── Groq Secondary AI Engine ────────────────────────────────────────────────
+async function callGroqAI(query, context) {
+  const systemPrompt = buildCompanionSystemPrompt();
   const key = activeSettings.groqApiKey || activeSettings.grokApiKey;
   if (!key) {
     return { text: "Please enter your free Groq API Key (gsk_...) in Settings to chat with me!" };
@@ -2167,132 +2420,7 @@ Be sweet, playful, and helpful!`;
     const data = await res.json();
     let rawReply = (data.choices?.[0]?.message?.content || "").trim();
 
-    // Execute [SEND_CHAT: ...]
-    const chatMatch = /\[SEND_CHAT:\s*({[^}]+})\]/i.exec(rawReply);
-    if (chatMatch) {
-      try {
-        const parsed = JSON.parse(chatMatch[1]);
-        if (parsed.text) {
-          const history = loadChatHistory();
-          const newMsg = {
-            id: "msg_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
-            sender: currentUserName,
-            recipient: partnerUserName,
-            senderRole: userRole,
-            text: parsed.text,
-            timestamp: Date.now(),
-            read: true,
-            isAiGenerated: true,
-          };
-          history.push(newMsg);
-          saveChatHistory(history);
-          try { broadcastChatMessage(newMsg); } catch {}
-          if (overlayWin && !overlayWin.isDestroyed()) {
-            overlayWin.webContents.send("partner-chat-received", newMsg);
-          }
-        }
-      } catch (e) {
-        console.warn("Parse SEND_CHAT error:", e);
-      }
-    }
-
-    // Execute [ADD_TASK: ...]
-    const taskMatch = /\[ADD_TASK:\s*({[^}]+})\]/i.exec(rawReply);
-    if (taskMatch) {
-      try {
-        const parsed = JSON.parse(taskMatch[1]);
-        if (parsed.title) {
-          const forRole = (parsed.for || userRole).toLowerCase();
-          const assignee = forRole.includes("her") || forRole.includes("partner") ? partnerRole : (forRole.includes("both") ? "both" : userRole);
-          const newItem = {
-            id: "task_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6),
-            title: parsed.title,
-            time: parsed.time || "",
-            assignee: assignee,
-            assignedBy: userRole,
-            completed: false,
-            createdAt: Date.now(),
-          };
-          activeSchedule.push(newItem);
-          saveSchedule(activeSchedule);
-          syncScheduleToPartner();
-          if (overlayWin && !overlayWin.isDestroyed()) {
-            overlayWin.webContents.send("schedule-updated", activeSchedule);
-          }
-        }
-      } catch (e) {
-        console.warn("Parse ADD_TASK error:", e);
-      }
-    }
-
-    // Execute [MARK_DONE: ...]
-    const doneMatch = /\[MARK_DONE:\s*([^\]]+)\]/i.exec(rawReply);
-    if (doneMatch) {
-      const queryDone = doneMatch[1].trim().toLowerCase();
-      const item = activeSchedule.find((s) => s.id === queryDone || s.title.toLowerCase().includes(queryDone));
-      if (item) {
-        item.completed = true;
-        item.completedAt = Date.now();
-        saveSchedule(activeSchedule);
-        syncScheduleToPartner();
-        if (overlayWin && !overlayWin.isDestroyed()) {
-          overlayWin.webContents.send("schedule-updated", activeSchedule);
-        }
-      }
-    }
-
-    // Execute [LAUNCH: ...]
-    const launchMatch = /\[LAUNCH:\s*([^\]]+)\]/i.exec(rawReply);
-    if (launchMatch) {
-      const target = launchMatch[1].trim();
-      void launchApplication(target);
-    }
-
-    // Execute [CLOSE: ...]
-    const closeMatch = /\[CLOSE:\s*([^\]]+)\]/i.exec(rawReply);
-    if (closeMatch) {
-      const target = closeMatch[1].trim();
-      void closeApplication(target);
-    }
-
-    // Execute [PLAY_YOUTUBE: ...]
-    const ytMatch = /\[PLAY_YOUTUBE:\s*([^\]]+)\]/i.exec(rawReply);
-    if (ytMatch) {
-      const ytQuery = ytMatch[1].trim();
-      console.log(`[Groq Action] Playing YouTube for query: "${ytQuery}"`);
-      void runMochiBridgeCmd("execute", "youtube_video", JSON.stringify({ action: "play", query: ytQuery })).catch((err) => {
-        console.warn("[Groq Action] Bridge youtube_video fallback to shell:", err);
-        shell.openExternal(`https://www.youtube.com/results?search_query=${encodeURIComponent(ytQuery)}`);
-      });
-    }
-
-    // Execute [WEB_SEARCH: ...]
-    const searchMatch = /\[WEB_SEARCH:\s*([^\]]+)\]/i.exec(rawReply);
-    if (searchMatch) {
-      const sQuery = searchMatch[1].trim();
-      console.log(`[Groq Action] Searching web for: "${sQuery}"`);
-      void runMochiBridgeCmd("execute", "web_search", JSON.stringify({ query: sQuery, mode: "search" })).catch((err) => {
-        console.warn("[Groq Action] Bridge web_search fallback to shell:", err);
-        shell.openExternal(`https://www.google.com/search?q=${encodeURIComponent(sQuery)}`);
-      });
-    }
-
-    // Execute [BROWSER_OPEN: ...]
-    const browserMatch = /\[BROWSER_OPEN:\s*([^\]]+)\]/i.exec(rawReply);
-    if (browserMatch) {
-      let bUrl = browserMatch[1].trim();
-      if (!/^https?:\/\//i.test(bUrl)) bUrl = "https://" + bUrl;
-      console.log(`[Groq Action] Opening browser URL: "${bUrl}"`);
-      shell.openExternal(bUrl);
-    }
-
-    // Execute [MEDIA_CONTROL: ...]
-    const mediaMatch = /\[MEDIA_CONTROL:\s*([^\]]+)\]/i.exec(rawReply);
-    if (mediaMatch) {
-      const mCmd = mediaMatch[1].trim();
-      console.log(`[Groq Action] Media/setting command: "${mCmd}"`);
-      void runMochiBridgeCmd("execute", "computer_settings", JSON.stringify({ description: mCmd }));
-    }
+    await executeActionTags(rawReply);
 
     const cleanReply = rawReply.replace(/\[[A-Z_]+:[^\]]*\]/gi, "").trim();
     return { text: cleanReply || rawReply };
@@ -2312,33 +2440,21 @@ ipcMain.handle("chat-send", async (_event, { query, context }) => {
     return await callGroqAI(query, context);
   }
 
-  // Gemini Live Engine
-  if (!mochiLiveProc) {
-    startMochiLiveEngine();
+  // Gemini Provider:
+  if (!activeSettings.geminiApiKey && !process.env.GEMINI_API_KEY) {
+    return { text: "Please enter your free Google Gemini API key in Settings (⚙️) to chat with Mochi!" };
   }
-  return new Promise((resolve) => {
-    let resolved = false;
-    const safeResolve = (res) => {
-      if (resolved) return;
-      resolved = true;
-      clearTimeout(timer);
-      resolve(res);
-    };
 
-    const timer = setTimeout(() => {
-      const idx = pendingTextResolvers.indexOf(safeResolve);
-      if (idx !== -1) pendingTextResolvers.splice(idx, 1);
-      safeResolve({ text: "(Command sent to Mochi)" });
-    }, 15000);
+  // Ensure Live Assistant engine is starting / running for voice/visemes
+  if (!mochiLiveProc || mochiLiveProc.killed) {
+    startMochiLiveEngine();
+  } else {
+    // Notify live assistant about the text interaction
+    sendToLiveEngine({ cmd: "text", text: query });
+  }
 
-    pendingTextResolvers.push(safeResolve);
-    const sent = sendToLiveEngine({ cmd: "text", text: query });
-    if (!sent) {
-      const idx = pendingTextResolvers.indexOf(safeResolve);
-      if (idx !== -1) pendingTextResolvers.splice(idx, 1);
-      safeResolve({ text: "Mochi live engine is initializing... Please try again in a moment." });
-    }
-  });
+  // Instant response via Gemini REST (never hangs on '...' thinking dots!)
+  return await callGeminiAI(query, context);
 });
 
 ipcMain.handle("chat-reset", () => {

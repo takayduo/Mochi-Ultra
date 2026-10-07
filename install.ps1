@@ -15,6 +15,46 @@ function Download-Fast($url, $dest, $showProgress = $false) {
     }
 }
 
+function Refresh-EnvPath {
+    $machinePath = [System.Environment]::GetEnvironmentVariable("Path", "Machine")
+    $userPath = [System.Environment]::GetEnvironmentVariable("Path", "User")
+    $combined = "$userPath;$machinePath;$env:Path"
+    $env:Path = ($combined -split ";" | Where-Object { $_ -ne "" } | Select-Object -Unique) -join ";"
+}
+
+function Find-RealPython {
+    Refresh-EnvPath
+    # 1. Search python.exe in current PATH (skip WindowsApps zero-byte stubs)
+    $all = Get-Command python.exe -All -ErrorAction SilentlyContinue
+    foreach ($cmd in $all) {
+        if ($cmd.Source -and $cmd.Source -notlike "*WindowsApps*" -and (Test-Path $cmd.Source)) {
+            return $cmd.Source
+        }
+    }
+    # 2. Check standard Python installation directories
+    $standardDirs = @(
+        "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe",
+        "$env:LOCALAPPDATA\Programs\Python\Python311\python.exe",
+        "$env:LOCALAPPDATA\Programs\Python\Python310\python.exe",
+        "$env:ProgramFiles\Python312\python.exe",
+        "$env:ProgramFiles\Python311\python.exe",
+        "$env:ProgramFiles\Python310\python.exe",
+        "${env:ProgramFiles(x86)}\Python312\python.exe",
+        "${env:ProgramFiles(x86)}\Python311\python.exe"
+    )
+    foreach ($p in $standardDirs) {
+        if (Test-Path $p) {
+            return $p
+        }
+    }
+    # 3. Check py.exe launcher
+    $pyCmd = Get-Command py.exe -ErrorAction SilentlyContinue
+    if ($pyCmd -and (Test-Path $pyCmd.Source)) {
+        return $pyCmd.Source
+    }
+    return $null
+}
+
 Write-Host ""
 Write-Host "===================================================" -ForegroundColor Magenta
 Write-Host "      🍡 MOCHI ULTRA 1-CLICK WINDOWS INSTALLER     " -ForegroundColor Cyan
@@ -71,29 +111,49 @@ if (Test-Path "$env:ProgramFiles\nodejs\node.exe") {
     $nodeExe = "node"
 }
 
-Write-Host "      ✓ Node.js is ready: $(& $nodeExe -v)" -ForegroundColor Green
+Write-Host "      [OK] Node.js is ready: $(& $nodeExe -v)" -ForegroundColor Green
 
 # 2. Check Python for Mark-LV Autonomous Engine
 Write-Host "[2/6] Checking Python 3 environment..." -ForegroundColor Yellow
-$pyCmd = Get-Command python -ErrorAction SilentlyContinue
-if (-not $pyCmd) {
-    $pyCmd = Get-Command py -ErrorAction SilentlyContinue
-}
+$pyExe = Find-RealPython
 
-if (-not $pyCmd) {
-    Write-Host "      Python not detected. Installing Python 3.12 automatically via winget..." -ForegroundColor Cyan
+if (-not $pyExe) {
+    Write-Host "      Python not detected. Installing Python 3.12 automatically..." -ForegroundColor Cyan
+    $installed = $false
+
+    # Try winget first if available
     $wingetCmd = Get-Command winget -ErrorAction SilentlyContinue
     if ($wingetCmd) {
         try {
+            Write-Host "      Attempting installation via winget..." -ForegroundColor Gray
             Start-Process winget -ArgumentList "install Python.Python.3.12 --silent --accept-package-agreements --accept-source-agreements" -Wait
+            Refresh-EnvPath
+            $pyExe = Find-RealPython
+            if ($pyExe) { $installed = $true }
         } catch {}
     }
+
+    # Direct download official Python 3.12 installer if winget failed or is missing
+    if (-not $installed -or -not $pyExe) {
+        Write-Host "      Downloading official Python 3.12 installer from python.org..." -ForegroundColor Gray
+        $pyUrl = "https://www.python.org/ftp/python/3.12.8/python-3.12.8-amd64.exe"
+        $pyDest = "$env:TEMP\python_312_installer.exe"
+        Download-Fast $pyUrl $pyDest
+        Write-Host "      Installing Python 3.12 (silent)..." -ForegroundColor Gray
+        Start-Process -FilePath $pyDest -ArgumentList "/quiet InstallAllUsers=0 PrependPath=1 Include_pip=1 SimpleInstall=1" -Wait
+        Remove-Item -Force $pyDest -ErrorAction SilentlyContinue
+        Refresh-EnvPath
+        $pyExe = Find-RealPython
+    }
 }
-$pyCmd = Get-Command python -ErrorAction SilentlyContinue
-if ($pyCmd) {
-    Write-Host "      ✓ Python is ready: $(python --version)" -ForegroundColor Green
+
+if ($pyExe) {
+    $pyDir = Split-Path $pyExe
+    $pyScripts = Join-Path $pyDir "Scripts"
+    $env:Path = "$pyDir;$pyScripts;$env:Path"
+    Write-Host "      [OK] Python is ready: $pyExe" -ForegroundColor Green
 } else {
-    Write-Host "      ⚠ Python was not installed automatically. You can install Python from python.org to enable Mark-LV autonomous live engine." -ForegroundColor Gray
+    Write-Host "      [!] Python could not be installed automatically. Please install Python 3.12 from python.org." -ForegroundColor Yellow
 }
 
 # 3. Download Mochi Ultra from GitHub
@@ -118,10 +178,18 @@ Expand-Archive -Path $zipFile -DestinationPath $extractTemp -Force
 Copy-Item -Path "$extractTemp\Mochi-Ultra-main\*" -Destination $installFolder -Recurse -Force
 Remove-Item -Recurse -Force $zipFile, $extractTemp
 
-Write-Host "      ✓ Downloaded into $installFolder" -ForegroundColor Green
+# Save resolved Python path for Electron engine runner
+if ($pyExe) {
+    if (-not (Test-Path "$installFolder\engine")) {
+        New-Item -ItemType Directory -Path "$installFolder\engine" -Force | Out-Null
+    }
+    Set-Content -Path (Join-Path $installFolder "engine\python_path.txt") -Value $pyExe -Force
+}
+
+Write-Host "      [OK] Downloaded into $installFolder" -ForegroundColor Green
 
 # 4. Install NPM Dependencies & Python Requirements
-Write-Host "[4/6] Installing packages (npm install & pip)..." -ForegroundColor Yellow
+Write-Host "[4/6] Installing packages (npm install and pip)..." -ForegroundColor Yellow
 Set-Location -Path $installFolder
 
 if (Test-Path "$installFolder\package-lock.json") {
@@ -130,15 +198,15 @@ if (Test-Path "$installFolder\package-lock.json") {
 
 & $npmExe install
 
-# Install Python requirements for Mark-LV engine if python is available
-if ($pyCmd -and (Test-Path "$installFolder\engine\requirements.txt")) {
+# Install Python requirements for Mark-LV autonomous engine
+if ($pyExe -and (Test-Path "$installFolder\engine\requirements.txt")) {
     Write-Host "      Installing Mark-LV engine Python dependencies..." -ForegroundColor Cyan
     try {
-        & python -m pip install --upgrade pip --quiet
-        & python -m pip install -r "$installFolder\engine\requirements.txt" --quiet
-        Write-Host "      ✓ Python dependencies installed." -ForegroundColor Green
+        & "$pyExe" -m pip install --upgrade pip --quiet
+        & "$pyExe" -m pip install -r "$installFolder\engine\requirements.txt"
+        Write-Host "      [OK] Python dependencies installed successfully!" -ForegroundColor Green
     } catch {
-        Write-Host "      ⚠ Python dependency install encountered a note: $_" -ForegroundColor Gray
+        Write-Host "      [!] Python dependency install note: $_" -ForegroundColor Yellow
     }
 }
 
@@ -169,7 +237,7 @@ if (-not (Test-Path $electronExe)) {
     Expand-Archive -Path $electronZipPath -DestinationPath $electronDist -Force
     Set-Content -Path (Join-Path $installFolder "node_modules\electron\path.txt") -Value "electron.exe" -NoNewline
     Remove-Item -Force $electronZipPath -ErrorAction SilentlyContinue
-    Write-Host "      ✓ Electron binary ready: $electronExe" -ForegroundColor Green
+    Write-Host "      [OK] Electron binary ready: $electronExe" -ForegroundColor Green
 }
 
 # 5. Build Mochi Ultra
@@ -193,7 +261,7 @@ if (Test-Path $electronExe) {
     $shortcut.Arguments = "."
 } else {
     $shortcut.TargetPath = "cmd.exe"
-    $shortcut.Arguments = "/c `"$installFolder\Launch Mochi Ultra.bat`""
+    $shortcut.Arguments = "/c `"$installFolder\Launch Mochi.bat`""
 }
 
 $shortcut.WorkingDirectory = $installFolder
@@ -201,14 +269,14 @@ $iconFile = Join-Path $installFolder "public\icons\icon.ico"
 if (Test-Path $iconFile) {
     $shortcut.IconLocation = "$iconFile,0"
 }
-$shortcut.Description = "Mochi Ultra — AI Desktop Companion with Autonomous PC Control Engine"
+$shortcut.Description = "Mochi Ultra -- AI Desktop Companion with Autonomous PC Control Engine"
 $shortcut.Save()
 
-Write-Host "      ✓ Desktop shortcut created: $shortcutPath" -ForegroundColor Green
+Write-Host "      [OK] Desktop shortcut created: $shortcutPath" -ForegroundColor Green
 
 Write-Host ""
 Write-Host "===================================================" -ForegroundColor Green
-Write-Host "   🎉 SUCCESS: Mochi Ultra is installed and ready! " -ForegroundColor Green
+Write-Host "   [SUCCESS] Mochi Ultra is installed and ready!   " -ForegroundColor Green
 Write-Host "===================================================" -ForegroundColor Green
 Write-Host ""
 Write-Host "Launching Mochi Ultra now..." -ForegroundColor Cyan
@@ -216,5 +284,5 @@ Write-Host "Launching Mochi Ultra now..." -ForegroundColor Cyan
 if (Test-Path $electronExe) {
     Start-Process -FilePath $electronExe -ArgumentList "." -WorkingDirectory $installFolder
 } else {
-    Start-Process -FilePath "cmd.exe" -ArgumentList "/c `"$installFolder\Launch Mochi Ultra.bat`"" -WindowStyle Hidden
+    Start-Process -FilePath "cmd.exe" -ArgumentList "/c `"$installFolder\Launch Mochi.bat`"" -WindowStyle Hidden
 }

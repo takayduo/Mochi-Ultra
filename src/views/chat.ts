@@ -128,9 +128,7 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
         if (!lastMsg || lastMsg.content !== reply.text) {
           State.chatHistory.push({ id: nextId++, role: "assistant", content: reply.text });
         }
-        if ((State.settings.aiProvider || "gemini") === "groq") {
-          void VoiceManager.speak(reply.text);
-        }
+        void VoiceManager.speak(reply.text);
       }
       State.stateOverride = null;
       State.triggerEmote("happy");

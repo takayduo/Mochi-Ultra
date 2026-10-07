@@ -61,13 +61,43 @@ if not exist "node_modules\electron\dist\electron.exe" (
 
 :: 3. Check for Python & install engine requirements (Mark-LV Engine)
 if exist "engine\requirements.txt" (
-    echo [*] Checking Python dependencies for engine...
+    echo [*] Checking Python environment for Mark-LV autonomous engine...
+    where python >nul 2>nul
+    if !ERRORLEVEL! NEQ 0 (
+        if exist "%LOCALAPPDATA%\Programs\Python\Python312\python.exe" (
+            set "PATH=%LOCALAPPDATA%\Programs\Python\Python312;%LOCALAPPDATA%\Programs\Python\Python312\Scripts;!PATH!"
+        ) else if exist "%ProgramFiles%\Python312\python.exe" (
+            set "PATH=%ProgramFiles%\Python312;%ProgramFiles%\Python312\Scripts;!PATH!"
+        ) else (
+            echo [!] Python 3 was not detected on your PC.
+            echo [*] Installing Python 3.12 automatically for you, please wait...
+            where winget >nul 2>nul
+            if !ERRORLEVEL! EQU 0 (
+                winget install Python.Python.3.12 --silent --accept-package-agreements --accept-source-agreements
+            ) else (
+                echo Downloading official Python 3.12 installer from python.org...
+                powershell -NoProfile -Command "Invoke-WebRequest -Uri 'https://www.python.org/ftp/python/3.12.8/python-3.12.8-amd64.exe' -OutFile '%TEMP%\python312.exe'"
+                echo Installing Python 3.12...
+                "%TEMP%\python312.exe" /quiet InstallAllUsers=0 PrependPath=1 Include_pip=1 SimpleInstall=1
+                del /f /q "%TEMP%\python312.exe" 2>nul
+            )
+            if exist "%LOCALAPPDATA%\Programs\Python\Python312\python.exe" (
+                set "PATH=%LOCALAPPDATA%\Programs\Python\Python312;%LOCALAPPDATA%\Programs\Python\Python312\Scripts;!PATH!"
+            ) else if exist "%ProgramFiles%\Python312\python.exe" (
+                set "PATH=%ProgramFiles%\Python312;%ProgramFiles%\Python312\Scripts;!PATH!"
+            )
+        )
+    )
+
     where python >nul 2>nul
     if !ERRORLEVEL! EQU 0 (
-        python -m pip install -r engine\requirements.txt --quiet --disable-pip-version-check
+        echo [*] Installing Python engine dependencies (pip)...
+        python -m pip install --upgrade pip --quiet --disable-pip-version-check
+        python -m pip install -r engine\requirements.txt --disable-pip-version-check
         echo [OK] Python engine dependencies installed!
+        powershell -NoProfile -Command "(Get-Command python.exe).Source | Set-Content -Path 'engine\python_path.txt' -Force" 2>nul
     ) else (
-        echo [!] Python not found in PATH. Make sure Python 3.10+ is installed for engine features.
+        echo [!] Python could not be detected. Mark-LV engine features will be limited until Python 3.12 is installed.
     )
     echo.
 )
