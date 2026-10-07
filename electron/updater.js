@@ -40,6 +40,18 @@ function getLocalVersionInfo() {
       if (gitRev && gitRev.length >= 7) {
         commit = gitRev;
       }
+      const gitMsg = execSync("git log -1 --pretty=%s", { cwd: appDir, stdio: ["ignore", "pipe", "ignore"] })
+        .toString()
+        .trim();
+      if (gitMsg) {
+        commitMessage = gitMsg;
+      }
+      const gitDate = execSync("git log -1 --pretty=%cI", { cwd: appDir, stdio: ["ignore", "pipe", "ignore"] })
+        .toString()
+        .trim();
+      if (gitDate) {
+        commitDate = gitDate;
+      }
     } catch (e) {
       // not a git repo or git not in path, use version.json
     }

@@ -968,10 +968,14 @@ class JarvisLive:
         # Load customization from config
         try:
             _cfg = json.loads(open(API_CONFIG_PATH, encoding="utf-8").read())
-            self._asst_name = (_cfg.get("assistant_name") or "JARVIS").strip()
-            _user_name = (_cfg.get("user_name") or "").strip()
+            self._asst_name = (_cfg.get("assistant_name") or "Mochi").strip()
+            _role = str(_cfg.get("user_role", "me")).strip().lower()
+            if _role == "her":
+                _user_name = (_cfg.get("user_name") or _cfg.get("partner_name") or "Ayzil").strip()
+            else:
+                _user_name = (_cfg.get("user_name") or "Badsha").strip()
         except Exception:
-            self._asst_name = "JARVIS"
+            self._asst_name = "Mochi"
             _user_name = ""
 
         memory     = load_memory()
@@ -1769,10 +1773,15 @@ class JarvisLive:
             try:
                 with open(settings_file, "r", encoding="utf-8") as f:
                     s = json.load(f)
-                    user_name = s.get("userName") or "User"
-                    partner_name = s.get("partnerName") or "Her"
-                    user_role = s.get("userRole") or "me"
-                    partner_role = "her" if user_role == "me" else "me"
+                    user_role = str(s.get("userRole", "me")).strip().lower()
+                    if user_role == "her":
+                        user_name = s.get("partnerName") or "Ayzil"
+                        partner_name = s.get("userName") or "Badsha"
+                        partner_role = "me"
+                    else:
+                        user_name = s.get("userName") or "Badsha"
+                        partner_name = s.get("partnerName") or "Ayzil"
+                        partner_role = "her"
             except Exception:
                 pass
 

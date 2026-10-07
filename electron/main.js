@@ -107,15 +107,15 @@ const DEFAULT_SETTINGS = {
   openrouterModel: "meta-llama/llama-3.3-70b-instruct:free",
   groqModel: "openai/gpt-oss-120b",
   micEnabled: true,
-  userName: "Me",
-  partnerName: "Her",
+  userName: "Badsha",
+  partnerName: "Ayzil",
   userRole: "me", // "me" | "her"
   gdriveApiKey: "",
   gdriveFolderId: "",
   gdriveUploadUrl: "",
   shareChannel: "coucou-badsha-ayzil",
-  syncUrl: "",
-  syncApiKey: "",
+  syncUrl: "https://brxmmguaybfozzyrditx.supabase.co/",
+  syncApiKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJyeG1tZ3VheWJmb3p6eXJkaXR4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA5NDQzNTksImV4cCI6MjEwNjUyMDM1OX0.JW8GbyVOSoUfjHvNVCcPpSGsAf9Qq-BCtGP2RRRIboM",
   appPaths: {
     discord: "C:\\Users\\" + (process.env.USERNAME || "User") + "\\AppData\\Local\\Discord\\Update.exe --processStart Discord.exe",
     whatsapp: "explorer.exe shell:AppsFolder\\5319275A.WhatsAppDesktop_cv1g1gvanyjgm!App",
@@ -532,6 +532,13 @@ function startSupabaseSync() {
       console.log("[Supabase Sync] Incoming chat message:", payload?.text);
       if (!payload || !payload.text) return;
 
+      // Ignore messages sent by self (by name or by senderRole)
+      const myLower = currentUserName.toLowerCase();
+      const senderLower = (payload.sender || "").toLowerCase();
+      if (senderLower === myLower || (payload.senderRole && payload.senderRole === (activeSettings.userRole || "me"))) {
+        return;
+      }
+
       if (!payload.id) {
         payload.id = "msg_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7);
       }
@@ -837,7 +844,8 @@ function startSupabaseSync() {
 
           for (const msg of cloudMessages) {
             if (!existingIds.has(msg.id)) {
-              const isFromPartner = (msg.sender || "").toLowerCase() !== currentUserName.toLowerCase();
+              const isFromPartner = (msg.sender || "").toLowerCase() !== currentUserName.toLowerCase() &&
+                                    (!msg.senderRole || msg.senderRole !== (activeSettings.userRole || "me"));
               history.push({
                 ...msg,
                 read: !isFromPartner ? true : false,
@@ -1033,7 +1041,7 @@ function createSettingsWindow() {
     height: winH,
     x: winX,
     y: winY,
-    title: "Coucou Creator Settings",
+    title: "Mochi Ultra Settings",
     backgroundColor: "#0b0c0e",
     frame: true,
     autoHideMenuBar: true,
@@ -1091,11 +1099,11 @@ function setupTray() {
   }
 
   tray = new Tray(trayIcon);
-  tray.setToolTip("Coucou Creator Companion");
+  tray.setToolTip("Mochi Ultra — AI Desktop Companion");
 
   const contextMenu = Menu.buildFromTemplate([
     {
-      label: "Open Coucou",
+      label: "Open Mochi Ultra",
       click: () => {
         if (overlayWin && !overlayWin.isDestroyed()) {
           overlayWin.webContents.send("tray", "open");
@@ -1440,11 +1448,19 @@ function syncEngineConfig(settings) {
         currentConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
       } catch {}
     }
+    const isHer = (settings.userRole || "me") === "her";
+    const rawMe = isHer ? (settings.partnerName || "Ayzil") : (settings.userName || "Badsha");
+    const rawPartner = isHer ? (settings.userName || "Badsha") : (settings.partnerName || "Ayzil");
+    const activeUserName = rawMe.trim() || (isHer ? "Ayzil" : "Badsha");
+    const activePartnerName = rawPartner.trim() || (isHer ? "Badsha" : "Ayzil");
+
     const updatedConfig = {
       ...currentConfig,
       gemini_api_key: settings.geminiApiKey || currentConfig.gemini_api_key || '',
       assistant_name: settings.assistantName || 'Mochi',
-      user_name: settings.userName || 'Me',
+      user_name: activeUserName,
+      partner_name: activePartnerName,
+      user_role: settings.userRole || 'me',
       voice_name: settings.voiceName || 'Charon',
       wake_word_enabled: !!settings.wakeWordEnabled,
       push_to_talk_enabled: !!settings.pushToTalkEnabled,
@@ -1648,13 +1664,18 @@ function handleLiveEngineEvent(msg) {
       break;
     }
     case 'partner_chat_send': {
-      const myName = activeSettings.userName || "Badsha";
-      const partnerName = activeSettings.partnerName || "Ayzil";
+      const isMe = (activeSettings.userRole || "me") === "me";
+      const rawMe = isMe ? (activeSettings.userName || "Badsha") : (activeSettings.partnerName || "Ayzil");
+      const rawPartner = isMe ? (activeSettings.partnerName || "Ayzil") : (activeSettings.userName || "Badsha");
+      const myName = (rawMe.trim() || (isMe ? "Badsha" : "Ayzil"));
+      const partnerName = (rawPartner.trim() || (isMe ? "Ayzil" : "Badsha"));
+      const myDisplayName = myName.charAt(0).toUpperCase() + myName.slice(1);
+      const partnerDisplayName = partnerName.charAt(0).toUpperCase() + partnerName.slice(1);
       const userRole = activeSettings.userRole || "me";
       const newMsg = {
         id: msg.id || ("msg_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7)),
-        sender: msg.sender || myName,
-        recipient: msg.recipient || partnerName,
+        sender: msg.sender || myDisplayName,
+        recipient: msg.recipient || partnerDisplayName,
         senderRole: msg.senderRole || userRole,
         text: msg.text || "",
         timestamp: Date.now(),
@@ -1671,6 +1692,9 @@ function handleLiveEngineEvent(msg) {
       } catch (err) {
         console.warn("[LiveEngine Broadcast Error]:", err);
       }
+      try {
+        saveChatMessageToCloud(newMsg, activeSettings.shareChannel || "coucou-badsha-ayzil");
+      } catch (err) {}
       if (overlayWin && !overlayWin.isDestroyed()) {
         overlayWin.webContents.send("partner-chat-received", newMsg);
       }
@@ -1769,6 +1793,10 @@ ipcMain.handle("save-settings", (_event, newSettings) => {
   const oldAutostart = activeSettings.autostart;
   const oldGeminiKey = activeSettings.geminiApiKey;
   const oldProvider = activeSettings.aiProvider || "gemini";
+  const oldUserRole = activeSettings.userRole || "me";
+  const oldUserName = activeSettings.userName || "Badsha";
+  const oldPartnerName = activeSettings.partnerName || "Ayzil";
+  const oldVoice = activeSettings.voiceName || "Charon";
   activeSettings = { ...activeSettings, ...newSettings };
   cachedMarkLvTools = null;
   saveSettings(activeSettings);
@@ -1778,9 +1806,14 @@ ipcMain.handle("save-settings", (_event, newSettings) => {
   startSupabaseSync();
   syncEngineConfig(activeSettings);
 
+  const identityChanged =
+    oldUserRole !== (activeSettings.userRole || "me") ||
+    oldUserName !== (activeSettings.userName || "Badsha") ||
+    oldPartnerName !== (activeSettings.partnerName || "Ayzil");
+
   const currentProvider = activeSettings.aiProvider || "gemini";
   if (currentProvider === "gemini") {
-    if (oldProvider !== "gemini" || !mochiLiveProc || oldGeminiKey !== activeSettings.geminiApiKey) {
+    if (oldProvider !== "gemini" || !mochiLiveProc || oldGeminiKey !== activeSettings.geminiApiKey || identityChanged) {
       if (mochiLiveProc) stopMochiLiveEngine();
       startMochiLiveEngine();
     } else {
@@ -1870,6 +1903,7 @@ ipcMain.handle("send-chat-message", async (_event, arg) => {
     id: "msg_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
     sender: myName,
     recipient: partnerName,
+    senderRole: activeSettings.userRole || "me",
     text: cleanText,
     timestamp: Date.now(),
     read: true,

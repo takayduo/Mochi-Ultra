@@ -109,7 +109,7 @@ export function buildHeader(actions: ViewActions): ViewHost {
     "button",
     {
       class: "tab",
-      title: "Remote Co-Pilot (Mochi Eye)",
+      title: "Remote Co-Pilot (Mochi Ultra)",
       onclick: () => go("remote-control"),
     },
     svg(ICONS.monitor, 13)

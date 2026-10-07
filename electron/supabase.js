@@ -333,11 +333,15 @@ function initSupabase({
             const newRow = payload?.new;
             if (newRow && typeof onChatMessage === "function") {
               // Ignore messages we sent ourselves
-              if ((newRow.sender || "").toLowerCase() !== userName.toLowerCase()) {
+              const isSelf = ((newRow.sender || "").toLowerCase() === (userName || "").toLowerCase()) ||
+                             (newRow.sender_role && newRow.sender_role === userRole) ||
+                             (newRow.senderRole && newRow.senderRole === userRole);
+              if (!isSelf) {
                 onChatMessage({
                   id: newRow.id,
                   sender: newRow.sender,
                   recipient: newRow.recipient,
+                  senderRole: newRow.sender_role || newRow.senderRole,
                   text: newRow.text,
                   timestamp: Number(newRow.timestamp),
                   isAiGenerated: !!newRow.is_ai_generated,

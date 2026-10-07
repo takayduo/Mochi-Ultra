@@ -110,8 +110,14 @@ def cmd_sync_config(cfg: dict):
             existing["gemini_api_key"] = cfg["geminiApiKey"].strip()
         if "assistantName" in cfg:
             existing["assistant_name"] = cfg["assistantName"].strip() or "Mochi"
-        if "userName" in cfg:
-            existing["user_name"] = cfg["userName"].strip()
+        user_role = str(cfg.get("userRole") or existing.get("user_role") or "me").strip().lower()
+        existing["user_role"] = user_role
+        if user_role == "her":
+            existing["user_name"] = (cfg.get("partnerName") or cfg.get("userName") or existing.get("partner_name") or existing.get("user_name") or "Ayzil").strip()
+            existing["partner_name"] = (cfg.get("userName") or existing.get("userName") or "Badsha").strip()
+        else:
+            existing["user_name"] = (cfg.get("userName") or existing.get("user_name") or "Badsha").strip()
+            existing["partner_name"] = (cfg.get("partnerName") or existing.get("partner_name") or "Ayzil").strip()
         if "voiceName" in cfg:
             existing["voice_name"] = cfg["voiceName"].strip()
         if "wakeWordEnabled" in cfg:

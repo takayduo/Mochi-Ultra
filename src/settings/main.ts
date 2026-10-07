@@ -675,35 +675,47 @@ function coupleSection(): HTMLElement {
   );
 
   const roleMe = h("button", {
-    class: settings.userRole === "me" ? "btn primary" : "btn secondary",
-    text: "This is My PC (Me 👤)",
+    class: (settings.userRole || "me") === "me" ? "btn primary" : "btn secondary",
+    text: "This is My PC (Badsha 👤)",
   });
   const roleHer = h("button", {
-    class: settings.userRole === "her" ? "btn primary" : "btn secondary",
-    text: "This is Her PC (Her 💖)",
+    class: (settings.userRole || "me") === "her" ? "btn primary" : "btn secondary",
+    text: "This is Her PC (Ayzil 💖)",
   });
+
+  const getCreator = () => (settings.userName && settings.userName !== "Me" ? settings.userName : "Badsha");
+  const getPartner = () => (settings.partnerName && settings.partnerName !== "Her" ? settings.partnerName : "Ayzil");
+
+  const updateRoleButtons = () => {
+    const creator = getCreator();
+    const partner = getPartner();
+    const isMe = (settings.userRole || "me") === "me";
+    roleMe.textContent = `This is My PC (${creator} 👤)`;
+    roleHer.textContent = `This is Her PC (${partner} 💖)`;
+    roleMe.className = isMe ? "btn primary" : "btn secondary";
+    roleHer.className = !isMe ? "btn primary" : "btn secondary";
+  };
 
   roleMe.addEventListener("click", () => {
     settings.userRole = "me";
-    roleMe.className = "btn primary";
-    roleHer.className = "btn secondary";
+    updateRoleButtons();
     void save();
   });
 
   roleHer.addEventListener("click", () => {
     settings.userRole = "her";
-    roleMe.className = "btn secondary";
-    roleHer.className = "btn primary";
+    updateRoleButtons();
     void save();
   });
 
   const userNameInput = h("input", {
     type: "text",
-    value: settings.userName || "Badsha",
+    value: getCreator(),
     placeholder: "e.g. Badsha",
   }) as HTMLInputElement;
   const saveUserName = () => {
     settings.userName = userNameInput.value.trim() || "Badsha";
+    updateRoleButtons();
     void save();
   };
   userNameInput.addEventListener("change", saveUserName);
@@ -711,15 +723,18 @@ function coupleSection(): HTMLElement {
 
   const partnerNameInput = h("input", {
     type: "text",
-    value: settings.partnerName || "Ayzil",
+    value: getPartner(),
     placeholder: "e.g. Ayzil",
   }) as HTMLInputElement;
   const savePartnerName = () => {
     settings.partnerName = partnerNameInput.value.trim() || "Ayzil";
+    updateRoleButtons();
     void save();
   };
   partnerNameInput.addEventListener("change", savePartnerName);
   partnerNameInput.addEventListener("blur", savePartnerName);
+
+  updateRoleButtons();
 
   const notifyOnlineToggle = toggle(settings.notifyPartnerOnline !== false, (on) => {
     settings.notifyPartnerOnline = on;
@@ -1463,11 +1478,11 @@ function generalSection(): HTMLElement {
       h("button", {
         class: "danger",
         style: "background:#f4505e;color:#fff;border:none;border-radius:8px;padding:6px 14px;cursor:pointer;font-weight:500;font-size:12px",
-        text: "Quit Coucou Companion",
+        text: "Quit Mochi Ultra",
         onclick: () => Bridge.quit(),
       })
     ),
-    h("div", { class: "version", text: `Coucou Creator v${version}` })
+    h("div", { class: "version", text: `Mochi Ultra v${version}` })
   );
 }
 

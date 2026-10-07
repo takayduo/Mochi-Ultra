@@ -39,8 +39,8 @@ function contextChip(label: string): HTMLElement {
 
 function userProfileBadge(): HTMLElement {
   const isMe = (State.settings.userRole || "me") === "me";
-  const myName = State.settings.userName || "Badsha";
-  const partnerName = State.settings.partnerName || "Ayzil";
+  const myName = (State.settings.userName && State.settings.userName !== "Me" ? State.settings.userName : "Badsha");
+  const partnerName = (State.settings.partnerName && State.settings.partnerName !== "Her" ? State.settings.partnerName : "Ayzil");
   const activeName = isMe ? myName : partnerName;
   const icon = isMe ? "👤" : "💖";
   const color = isMe ? "#38bdf8" : "#f43f5e";

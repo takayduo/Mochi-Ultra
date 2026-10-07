@@ -84,8 +84,10 @@ export function buildCoupleChat(actions: ViewActions): ViewHost {
 
   function getCoupleInfo() {
     const isMe = (State.settings.userRole || "me") === "me";
-    const rawMe = isMe ? (State.settings.userName || "Badsha") : (State.settings.partnerName || "Ayzil");
-    const rawPartner = isMe ? (State.settings.partnerName || "Ayzil") : (State.settings.userName || "Badsha");
+    const creator = (State.settings.userName && State.settings.userName !== "Me" ? State.settings.userName : "Badsha");
+    const partner = (State.settings.partnerName && State.settings.partnerName !== "Her" ? State.settings.partnerName : "Ayzil");
+    const rawMe = isMe ? creator : partner;
+    const rawPartner = isMe ? partner : creator;
     const myName = (rawMe.charAt(0).toUpperCase() + rawMe.slice(1)) || "Me";
     const partnerName = (rawPartner.charAt(0).toUpperCase() + rawPartner.slice(1)) || "Partner";
     const myIcon = isMe ? "👤" : "💖";
@@ -114,7 +116,8 @@ export function buildCoupleChat(actions: ViewActions): ViewHost {
     }
 
     for (const msg of messages) {
-      const isFromMe = (msg.sender || "").toLowerCase() === myName.toLowerCase();
+      const isFromMe = (msg.sender || "").toLowerCase() === myName.toLowerCase() ||
+                       (msg.senderRole && msg.senderRole === (isMe ? "me" : "her"));
       const row = h("div", {
         class: isFromMe ? "chat-row user" : "chat-row partner",
         style: `display:flex;justify-content:${isFromMe ? "flex-end" : "flex-start"};width:100%;`,

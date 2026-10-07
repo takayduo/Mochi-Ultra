@@ -17,7 +17,7 @@ export function buildRemoteControl(actions: ViewActions): ViewHost {
   const headerTitle = h("div", {
     class: "sched-title",
     style: "display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600;",
-    text: "Mochi Eye — Co-Pilot 🖥️",
+    text: "Mochi Ultra — Co-Pilot 🖥️",
   });
 
   const topRow = h(
@@ -47,7 +47,9 @@ export function buildRemoteControl(actions: ViewActions): ViewHost {
 
   function getPartnerName() {
     const isMe = (State.settings.userRole || "me") === "me";
-    const rawPartner = isMe ? (State.settings.partnerName || "Ayzil") : (State.settings.userName || "Badsha");
+    const creator = (State.settings.userName && State.settings.userName !== "Me" ? State.settings.userName : "Badsha");
+    const partner = (State.settings.partnerName && State.settings.partnerName !== "Her" ? State.settings.partnerName : "Ayzil");
+    const rawPartner = isMe ? partner : creator;
     return (rawPartner.charAt(0).toUpperCase() + rawPartner.slice(1)) || "Partner";
   }
 
